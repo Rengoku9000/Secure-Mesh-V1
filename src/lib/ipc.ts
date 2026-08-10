@@ -1,0 +1,134 @@
+/**
+ * The single place the frontend talks to the Rust core.
+ *
+ * Every call goes through Tauri IPC to a local process. There is no HTTP
+ * client in this application and no external endpoint to configure — a
+ * SecureMesh node has nothing to reach out to.
+ *
+ * Components import the functions below rather than calling `invoke`
+ * directly, so command names and argument shapes exist in exactly one place.
+ */
+
+import { invoke } from "@tauri-apps/api/core";
+import type {
+  CoreErrorCode,
+  Incident,
+  NetworkStatus,
+  NewIncident,
+  Observation,
+  Peer,
+  PublicIdentity,
+  SystemStatus,
+} from "../types/core";
+
+/**
+ * An error raised by the Rust core, carrying the stable code the core
+ * assigned. Components branch on `code`, never on message text.
+ */
+export class CoreError extends Error {
+  readonly code: CoreErrorCode | "IPC_ERROR";
+
+  constructor(code: CoreErrorCode | "IPC_ERROR", message: string) {
+    super(message);
+    this.name = "CoreError";
+    this.code = code;
+  }
+
+  /** True when the operator can fix this by changing their input. */
+  get isValidation(): boolean {
+    return this.code === "VALIDATION_ERROR";
+  }
+}
+
+/**
+ * Normalises whatever `invoke` rejected with into a `CoreError`.
+ *
+ * The core returns `{ code, message }`, but a transport-level failure can
+ * reject with a bare string or an `Error`, so every shape is handled rather
+ * than assumed.
+ */
+function toCoreError(raw: unknown): CoreError {
+  if (raw instanceof CoreError) {
+    return raw;
+  }
+
+  if (typeof raw === "object" && raw !== null && "code" in raw && "message" in raw) {
+    const { code, message } = raw as { code: unknown; message: unknown };
+    if (typeof code === "string" && typeof message === "string") {
+      return new CoreError(code as CoreErrorCode, message);
+    }
+  }
+
+  if (typeof raw === "string") {
+    return new CoreError("IPC_ERROR", raw);
+  }
+
+  if (raw instanceof Error) {
+    return new CoreError("IPC_ERROR", raw.message);
+  }
+
+  return new CoreError("IPC_ERROR", "The SecureMesh core returned an unexpected error.");
+}
+
+async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(command, args);
+  } catch (raw) {
+    throw toCoreError(raw);
+  }
+}
+
+/** This node's public identity. Never includes private key material. */
+export function getNodeIdentity(): Promise<PublicIdentity> {
+  return call<PublicIdentity>("get_node_identity");
+}
+
+/** Health of every subsystem, for the status panel. */
+export function getSystemStatus(): Promise<SystemStatus> {
+  return call<SystemStatus>("get_system_status");
+}
+
+/** Mesh connectivity and the backlog awaiting propagation. */
+export function getNetworkStatus(): Promise<NetworkStatus> {
+  return call<NetworkStatus>("get_network_status");
+}
+
+/**
+ * Creates an incident.
+ *
+ * The input is validated in Rust, not here. Any client-side checking exists
+ * only to give faster feedback; it is never the enforcement point.
+ */
+export function createIncident(input: NewIncident): Promise<Incident> {
+  return call<Incident>("create_incident", { input });
+}
+
+/** Recent incidents, newest first. The core clamps `limit`. */
+export function getIncidents(limit?: number): Promise<Incident[]> {
+  return call<Incident[]>("get_incidents", { limit: limit ?? null });
+}
+
+/** A single incident by ID. Rejects with `NOT_FOUND` if it does not exist. */
+export function getIncident(id: string): Promise<Incident> {
+  return call<Incident>("get_incident", { id });
+}
+
+/** Known peers, with live connection state and per-peer sync backlog. */
+export function getPeers(): Promise<Peer[]> {
+  return call<Peer[]>("get_peers");
+}
+
+/** Observations appended to an incident, from this node or any peer. */
+export function getObservations(incidentId: string): Promise<Observation[]> {
+  return call<Observation[]>("get_observations", { incidentId });
+}
+
+/**
+ * Appends an observation to an incident.
+ *
+ * Phase 2 records developments by appending rather than editing, so two nodes
+ * updating the same incident while partitioned cannot lose each other's work.
+ */
+export function addObservation(incidentId: string, note: string): Promise<void> {
+  return call<void>("add_observation", { incidentId, note });
+}

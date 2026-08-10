@@ -1,0 +1,198 @@
+/*
+ * SecureMesh design tokens.
+ *
+ * Every colour in the application is defined here and nowhere else. Components
+ * reference tokens only, never literal colour values, which is what keeps the
+ * two themes in step and prevents the "invisible text in dark mode" class of
+ * bug: a token that exists in light mode is guaranteed to exist in dark mode
+ * because both blocks define the same complete set.
+ *
+ * Theme resolution:
+ *   :root                        -> light palette (the base, always complete)
+ *   prefers-color-scheme: dark   -> dark palette, unless the user forced light
+ *   [data-theme="dark"]          -> dark palette, explicit user choice
+ *   [data-theme="light"]         -> light palette wins over the media query
+ *
+ * Contrast: body text pairs are at or above WCAG AA (4.5:1) against the
+ * surface they sit on; large text and non-text indicators are at or above 3:1.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces, from furthest back to closest to the reader. */
+  --bg-canvas: #eef1f5;
+  --bg-surface: #ffffff;
+  --bg-raised: #ffffff;
+  --bg-inset: #f4f6f9;
+  --bg-hover: #eaeef3;
+
+  /* Borders, increasing in prominence. */
+  --border-subtle: #e2e7ed;
+  --border-default: #cfd6df;
+  --border-strong: #a9b4c2;
+
+  /* Text. */
+  --text-primary: #0d1520;
+  --text-secondary: #47546a;
+  --text-muted: #5f6c80;
+  --text-inverse: #ffffff;
+
+  /* Interactive accent. */
+  --accent: #0a5fc4;
+  --accent-hover: #084da0;
+  --accent-contrast: #ffffff;
+  --accent-soft: #e4eefb;
+  --focus-ring: #0a5fc4;
+
+  /* Subsystem states. */
+  --state-ok: #10713d;
+  --state-ok-soft: #dff3e6;
+  --state-degraded: #8a5300;
+  --state-degraded-soft: #fdefd6;
+  --state-inactive: #5f6c80;
+  --state-inactive-soft: #eaeef3;
+
+  /* Incident severity: a tinted chip with high-contrast text. */
+  --sev-low-fg: #23506e;
+  --sev-low-bg: #e2eef7;
+  --sev-medium-fg: #7a4a00;
+  --sev-medium-bg: #fdeed3;
+  --sev-high-fg: #8c3410;
+  --sev-high-bg: #fbe4da;
+  --sev-critical-fg: #8f1023;
+  --sev-critical-bg: #fbdde2;
+
+  /* Danger, for validation messages. */
+  --danger-fg: #a3172c;
+  --danger-bg: #fbe1e5;
+  --danger-border: #f0bcc4;
+
+  /* Elevation. */
+  --shadow-sm: 0 1px 2px rgb(13 21 32 / 8%);
+  --shadow-md: 0 4px 16px rgb(13 21 32 / 10%);
+  --shadow-lg: 0 12px 40px rgb(13 21 32 / 18%);
+
+  /* Geometry and type. */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  --font-sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --font-mono: "Cascadia Mono", "SF Mono", "JetBrains Mono", Consolas, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+}
+
+/*
+ * The dark palette. Declared twice — once for the system preference and once
+ * for the explicit toggle — because a single selector cannot express both
+ * "system says dark" and "user chose dark" while still letting an explicit
+ * light choice override the system.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --bg-canvas: #080c12;
+    --bg-surface: #111926;
+    --bg-raised: #182332;
+    --bg-inset: #0d151f;
+    --bg-hover: #1e2b3d;
+
+    --border-subtle: #1d2837;
+    --border-default: #2a3849;
+    --border-strong: #3d4d63;
+
+    --text-primary: #e9eff7;
+    --text-secondary: #a9b8cb;
+    --text-muted: #8695a8;
+    --text-inverse: #08111c;
+
+    --accent: #62a8ff;
+    --accent-hover: #8bc0ff;
+    --accent-contrast: #051426;
+    --accent-soft: #142639;
+    --focus-ring: #62a8ff;
+
+    --state-ok: #58d68d;
+    --state-ok-soft: #122c1f;
+    --state-degraded: #f0b64d;
+    --state-degraded-soft: #2e2312;
+    --state-inactive: #8695a8;
+    --state-inactive-soft: #1a2432;
+
+    --sev-low-fg: #9ec8e8;
+    --sev-low-bg: #14293a;
+    --sev-medium-fg: #f2c078;
+    --sev-medium-bg: #2f2413;
+    --sev-high-fg: #f5a184;
+    --sev-high-bg: #341a12;
+    --sev-critical-fg: #f78ea0;
+    --sev-critical-bg: #34131c;
+
+    --danger-fg: #f79aa8;
+    --danger-bg: #331520;
+    --danger-border: #56222f;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+    --shadow-md: 0 4px 16px rgb(0 0 0 / 45%);
+    --shadow-lg: 0 12px 40px rgb(0 0 0 / 55%);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-canvas: #080c12;
+  --bg-surface: #111926;
+  --bg-raised: #182332;
+  --bg-inset: #0d151f;
+  --bg-hover: #1e2b3d;
+
+  --border-subtle: #1d2837;
+  --border-default: #2a3849;
+  --border-strong: #3d4d63;
+
+  --text-primary: #e9eff7;
+  --text-secondary: #a9b8cb;
+  --text-muted: #8695a8;
+  --text-inverse: #08111c;
+
+  --accent: #62a8ff;
+  --accent-hover: #8bc0ff;
+  --accent-contrast: #051426;
+  --accent-soft: #142639;
+  --focus-ring: #62a8ff;
+
+  --state-ok: #58d68d;
+  --state-ok-soft: #122c1f;
+  --state-degraded: #f0b64d;
+  --state-degraded-soft: #2e2312;
+  --state-inactive: #8695a8;
+  --state-inactive-soft: #1a2432;
+
+  --sev-low-fg: #9ec8e8;
+  --sev-low-bg: #14293a;
+  --sev-medium-fg: #f2c078;
+  --sev-medium-bg: #2f2413;
+  --sev-high-fg: #f5a184;
+  --sev-high-bg: #341a12;
+  --sev-critical-fg: #f78ea0;
+  --sev-critical-bg: #34131c;
+
+  --danger-fg: #f79aa8;
+  --danger-bg: #331520;
+  --danger-border: #56222f;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 45%);
+  --shadow-lg: 0 12px 40px rgb(0 0 0 / 55%);
+}

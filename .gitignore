@@ -1,0 +1,57 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Standalone binary staged by `npm run app:stage`
+dist-app
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# --- SecureMesh: never commit secrets or node state ---
+# Cryptographic key material of any form
+*.key
+*.pem
+*.p12
+*.pfx
+identity.json
+node_identity*
+secrets/
+
+# Local node databases (contain operational data)
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Environment / credentials
+.env
+.env.*
+!.env.example
+
+# Local AI model weights (large, fetched out of band; see docs/architecture/ROADMAP.md)
+ai/models/*
+!ai/models/.gitkeep
+!ai/models/README.md
+*.gguf
+*.onnx
+*.safetensors

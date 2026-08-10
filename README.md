@@ -1,0 +1,321 @@
+# SecureMesh
+
+**Confidential Edge-AI Platform for Resilient Offline Communication**
+
+Smart India Hackathon 2026 · STH260001 (Open Innovation) · Hardware ·
+Blockchain & Cybersecurity
+
+> A self-contained, offline-first, secure edge-computing node that can
+> communicate, store, synchronise and locally process information without
+> depending on external cloud services.
+
+**Current status: Phase 2 complete.** Nodes hold cryptographic identities,
+persist an append-only signed event log, discover each other on a local network
+with no server, authenticate over encrypted QUIC, and replicate incidents —
+converging correctly across partitions, restarts, duplicate delivery and
+out-of-order arrival. Local AI and confidential computing are designed but
+**not implemented** — see [Roadmap](#roadmap) and
+[Current limitations](#current-limitations).
+
+---
+
+## The problem
+
+When infrastructure fails, the software built on top of it fails with it.
+
+Disaster response, remote healthcare, and field operations share a
+characteristic that most software gets wrong: **connectivity is the exception,
+not the rule.** Cell towers are down or saturated, satellite links are
+expensive and intermittent, and the moment a system needs a server to validate a
+login or store a record, it stops working exactly when it is needed most.
+
+Meanwhile the data involved is often sensitive — casualty information, location
+of vulnerable people, operational capability — which rules out routing it
+through third-party cloud services even when a connection exists.
+
+## The solution
+
+SecureMesh nodes are independent by construction. Each one:
+
+1. Holds its own cryptographic identity ✅
+2. Stores its own operational data locally ✅
+3. Communicates directly with nearby nodes ✅
+4. Synchronises without a coordinating server ✅
+5. Runs AI inference on-device *(Phase 3)*
+6. Answers questions from local documents *(Phase 4)*
+7. Protects keys and processing in hardware *(Phase 5)*
+
+A node that can see no peers is in a **normal** state, not a degraded one.
+
+The architecture is deliberately not tied to disaster response. Defence field
+operations, humanitarian logistics, remote healthcare, critical infrastructure,
+and remote industrial sites share the same constraint and are served by the same
+design.
+
+---
+
+## The local-only principle
+
+**SecureMesh contacts no external service. This is not a configuration option —
+there is nothing to configure.**
+
+Not used, at any phase: OpenAI · Anthropic · Gemini · Groq · OpenRouter ·
+Hugging Face inference · Firebase · Supabase · hosted vector databases · cloud
+databases · cloud authentication · mapping APIs · any paid SaaS API.
+
+Verifiable rather than asserted:
+
+```powershell
+cd src-tauri
+cargo tree | Select-String "reqwest|hyper|isahc|ureq|curl"   # no results
+```
+
+There is no HTTP client in the dependency tree and no external endpoint in the
+codebase.
+
+**Precision matters here.** Phase 2 *does* open a local UDP socket for QUIC and
+*does* broadcast mDNS on the local link — peer-to-peer networking cannot work
+otherwise. Local sockets and P2P protocols were always permitted; the constraint
+is on **external and cloud dependencies**, not on networking as such. A
+SecureMesh node still talks to nobody but its neighbours, and needs no server,
+no DHT bootstrap, and no Internet.
+
+---
+
+## Architecture
+
+```
+                        SECUREMESH NODE
+                              │
+              ┌───────────────┴───────────────┐
+              │                               │
+          UI LAYER                       CORE LAYER
+    React 19 + TypeScript                 Rust core
+              │                               │
+              └────── Tauri 2 IPC ────────────┤
+                                              │
+     ┌────────────┬────────────┬────────────┬────────────┐
+     │            │            │            │            │
+  Identity     Storage     Networking     Sync       Security
+  Ed25519      SQLite      MeshTransport  event log  Secret/audit
+  KeyStore     event log   libp2p/QUIC    watermarks
+     │                     mDNS
+     │
+  ┌──┴─────────────────────────────────┐
+  │  PLANNED:  AI → RAG → TEE          │
+  └────────────────────────────────────┘
+```
+
+Replication is an **append-only log of signed events**, ordered by per-origin
+sequence numbers rather than wall-clock time. Incidents are a projection of that
+log, so local creation and remote replication travel the same code path.
+
+No mandatory central server. No `React → API → cloud` dependency. Full detail in
+[`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md).
+
+---
+
+## Technology stack
+
+| Layer | Choice | Version |
+|---|---|---|
+| Frontend | React + TypeScript + Vite | 19 · 5.8 · 7 |
+| Desktop shell | Tauri | 2 |
+| Core | Rust | 1.97 (MSVC on Windows) |
+| Database | SQLite via `rusqlite` (bundled) | 0.40 |
+| P2P | `libp2p` — QUIC, mDNS, request-response, identify | 0.56 |
+| Signatures | `ed25519-dalek` | 3.0 |
+| Randomness | `getrandom` (OS CSPRNG) | 0.4 |
+| Hashing | `sha2` | 0.11 |
+| Key erasure | `zeroize` | 1.9 |
+
+libp2p is deliberately minimal: QUIC only, with no TCP/Noise/Yamux fallback and
+no DHT. Planned: a local inference runtime (Phase 3), a local vector index
+(Phase 4).
+
+---
+
+## Development setup
+
+### Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| Node.js 20+ | LTS recommended |
+| Rust (stable) | Install via [rustup](https://rustup.rs) |
+| **Windows:** VS 2022 Build Tools with the C++ workload + Windows SDK | Rust needs the MSVC linker |
+| **Windows:** WebView2 Runtime | Pre-installed on Windows 11 |
+| **Linux:** `webkit2gtk-4.1`, `libayatana-appindicator3-dev`, `librsvg2-dev` | See [Tauri prerequisites](https://tauri.app/start/prerequisites/) |
+| **macOS:** Xcode Command Line Tools | |
+
+### Run
+
+```bash
+npm install
+npm run tauri dev
+```
+
+The first build compiles the Rust core and takes several minutes.
+
+### Test
+
+```bash
+cd src-tauri
+cargo test            # 218 tests: 181 unit + 37 integration
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+The distributed-systems behaviour (partition, restart, duplicate delivery,
+reordering, equivocation, multi-hop relay) is tested in `tests/mesh_sync.rs`
+over a deterministic in-process transport, so those cases are asserted rather
+than raced. `tests/mesh_libp2p.rs` exercises the same code over real QUIC.
+
+### Run two nodes on one machine
+
+Each node *is* its data directory — identity plus log — so a second node needs
+its own:
+
+```powershell
+npm run app:stage    # builds a standalone binary into dist-app/
+
+$env:SECUREMESH_DATA_DIR="$env:TEMP\smA"; Start-Process .\dist-app\securemesh.exe
+$env:SECUREMESH_DATA_DIR="$env:TEMP\smB"; Start-Process .\dist-app\securemesh.exe
+```
+
+They discover each other automatically. Create an incident in one window and it
+appears in the other.
+
+> **Do not launch `src-tauri/target/debug/securemesh.exe` directly.** That path
+> is rewritten by every `cargo build`, `cargo test` and `cargo clippy` into a
+> *development* binary, which loads the UI from the Vite dev server instead of
+> from embedded assets. Run it without `npm run tauri dev` and the window shows
+> `ERR_CONNECTION_REFUSED`.
+>
+> `npm run app:stage` produces a production binary in `dist-app/`, where `cargo`
+> never writes, and fails the build if the frontend is not actually embedded.
+> The app also states its build mode on startup.
+
+```bash
+npx tsc --noEmit      # frontend type check
+```
+
+### Build a release binary
+
+```bash
+npm run tauri build
+```
+
+### Where a node keeps its data
+
+| OS | Path |
+|---|---|
+| Windows | `%APPDATA%\org.securemesh.node\` |
+| Linux | `~/.local/share/org.securemesh.node/` |
+| macOS | `~/Library/Application Support/org.securemesh.node/` |
+
+`node_identity.json` (the keypair) and `securemesh.sqlite` (the records).
+Deleting the directory resets the node to a first launch.
+
+---
+
+## What it actually does
+
+**Phase 1 — the node**
+
+- Generates an Ed25519 keypair on first launch, reused thereafter
+- Derives the node ID as `SHA-256(public key)` and the display name from it, so
+  identity is derived from key material rather than assigned
+- Keeps the private key out of the UI, IPC, logs, and `Debug` output
+- Persists to a real SQLite file with versioned migrations, foreign keys, and
+  `CHECK` constraints
+- Validates all input in Rust, never in the frontend
+- Light and dark themes from one token set
+
+**Phase 2 — the mesh**
+
+- Discovers peers on the local network by mDNS, with no server and no bootstrap
+- Authenticates peers by the QUIC handshake, reusing the node's own Ed25519 key,
+  so no custom cryptography was written
+- Replicates an append-only log of author-signed events, each verifiable
+  standalone — so a relayed event does not require trusting the relay
+- Orders by per-origin sequence numbers, **never by wall-clock time**
+- Converges by union across partitions: concurrent creation produces no
+  conflicts by construction
+- Detects equivocation (one node signing two different events at one sequence
+  number), keeps both versions, and stops advancing replication from that node
+- Survives restart, duplicate delivery, out-of-order arrival, and interrupted
+  sync rounds — all sync state is durable, none is held in memory
+- Reports peers, connection state, last-seen, and per-peer backlog in the UI
+
+## Current limitations
+
+Stated plainly, because a reader needs them to judge what this is fit for.
+
+| Limitation | Detail |
+|---|---|
+| **No peer enrolment** | Authentication proves a peer holds its claimed key; it does **not** prove the peer is authorised. Any node on the network can join and inject records of its own authorship. The most significant Phase 2 weakness. `SECURITY.md` §6.6 |
+| **The private key is stored unencrypted at rest** | Protected by OS file permissions only. §6.1 |
+| **Not end-to-end encrypted** | QUIC protects each hop. A relay node reads the plaintext it forwards — it cannot forge or alter it, but it can read it. §6.7 |
+| Incident data is not encrypted at rest | Standard SQLite file. §6.2 |
+| Metadata is exposed | mDNS advertises this node's presence, ID and public key on the local link. §6.8 |
+| The transport key must be extractable | libp2p needs the private key in process memory, which conflicts with the non-extractable hardware storage planned for Phase 5. §6.9 |
+| No mutable incident editing | Phase 2 is append-only by design; updates are observations. This is what makes conflict-free merging possible |
+| No AI, no RAG | No model ships with the build. Phases 3–4 |
+| **No TEE** | This is an ordinary OS process. A normal process is not a TEE, and a TPM is not a TEE. Phase 5 |
+| No operator authentication | Anyone who can open the app is the operator. §6.3 |
+| Audit log is not durable | Written to stderr; useful for diagnostics, not evidence. §6.4 |
+| No rate limiting | Message sizes are bounded, but there is no per-peer quota. §6.10 |
+| Not security reviewed | No penetration test, no independent audit |
+
+Full analysis: [`docs/security/SECURITY.md`](docs/security/SECURITY.md).
+
+---
+
+## Roadmap
+
+| Phase | Scope | Status |
+|---|---|---|
+| **1** | Node foundation: identity, storage, incidents, dashboard | ✅ **Complete** |
+| **2** | P2P mesh: libp2p, QUIC, authenticated peers, signed events, offline sync | ✅ **Complete** |
+| **3** | Local inference: classification, extraction, summarisation | 📋 Designed |
+| **4** | Local RAG: embeddings, vector index, grounded answers | 📋 Designed |
+| **5** | Confidential computing: TPM-backed keys, encrypted storage, TEE | 🔍 Research |
+| **6** | Physical node: edge compute, secure element, LoRa, GNSS, battery | 🔍 Research |
+
+Details and per-phase exit criteria:
+[`docs/architecture/ROADMAP.md`](docs/architecture/ROADMAP.md).
+
+### On blockchain
+
+The theme is "Blockchain & Cybersecurity"; SecureMesh fits through
+cybersecurity. A distributed ledger is **not** part of the MVP: consensus trades
+away availability under partition, and availability under partition is the whole
+requirement. It will be added only if a specific architectural problem genuinely
+calls for it.
+
+---
+
+## Data policy
+
+- All demo data is **synthetic** and labelled as such.
+- No private, classified, sensitive, or real operational data is collected or
+  committed.
+- Knowledge sources for Phase 4 must be openly licensed and non-sensitive.
+- This is a prototype. It must not be used to handle real operational data.
+
+---
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md) | Layers, design decisions and trade-offs, data model, Phase 2–5 design |
+| [`docs/security/SECURITY.md`](docs/security/SECURITY.md) | Threat assumptions, trust boundaries, implemented controls, known limitations |
+| [`docs/architecture/ROADMAP.md`](docs/architecture/ROADMAP.md) | Phased plan with exit criteria and open research questions |
+| [`docs/demo/DEMO.md`](docs/demo/DEMO.md) | Five-minute demo script |
+
+---
+
+## Licence
+
+Not yet chosen.

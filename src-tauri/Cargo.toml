@@ -1,0 +1,38 @@
+[package]
+name = "securemesh"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "securemesh_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+ed25519-dalek = "3.0.0"
+uuid = { version = "1.24.0", features = ["v4", "serde"] }
+chrono = { version = "0.4.45", default-features = false, features = ["serde", "clock", "std"] }
+getrandom = "0.4.3"
+zeroize = "1.9.0"
+hex = "0.4.3"
+sha2 = "0.11.0"
+libp2p = { version = "0.56.0", features = ["ed25519", "quic", "mdns", "request-response", "json", "identify", "ping", "macros", "tokio", "cbor"] }
+tokio = { version = "1.53.1", features = ["rt", "time", "macros"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+uuid = { version = "1.24.0", features = ["v4"] }
+

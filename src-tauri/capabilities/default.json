@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Minimal capability set for the SecureMesh main window. Only Tauri's core permissions are granted; every SecureMesh operation is reached through an explicit command in src-tauri/src/commands, which needs no additional permission. Nothing here grants filesystem, shell, HTTP, or external-launch access.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

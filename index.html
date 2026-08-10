@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      The Content-Security-Policy is declared in src-tauri/tauri.conf.json
+      rather than here, so that Tauri can extend it with the origins its own
+      IPC and asset protocols require. Hand-writing the policy in this file
+      would break `invoke`.
+    -->
+    <title>SecureMesh Node</title>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
