@@ -91,6 +91,64 @@ export interface NewIncident {
 export type ConnectionState = "DISCONNECTED" | "CONNECTING" | "CONNECTED";
 
 /**
+ * Whether a peer is *authorized*. Mirrors `domain::trust::TrustState`.
+ *
+ * Independent of `ConnectionState`: a peer can be CONNECTED and REVOKED at the
+ * same time — the session exists, but nothing is authorized to flow through it.
+ */
+export type TrustState = "UNKNOWN" | "PENDING" | "TRUSTED" | "REVOKED";
+
+/** Mirrors `domain::trust::PeerRole`. */
+export type PeerRole = "NODE" | "ADMIN";
+
+/** Mirrors `domain::trust::Capability`. */
+export type Capability =
+  | "INCIDENT_CREATE"
+  | "INCIDENT_READ"
+  | "INCIDENT_SYNC"
+  | "PEER_DISCOVER"
+  | "PEER_ENROLL"
+  | "PEER_REVOKE";
+
+/** Mirrors `domain::trust::TrustEventKind`. */
+export type TrustEventKind =
+  | "peer.enrollment.requested"
+  | "peer.enrollment.approved"
+  | "peer.enrollment.rejected"
+  | "peer.revoked"
+  | "peer.reinstated";
+
+/** An entry in the local trust audit log. Mirrors `domain::trust::TrustEvent`. */
+export interface TrustEvent {
+  id: string;
+  /** Local monotonic ordering — not wall-clock time. */
+  sequence: number;
+  nodeId: string;
+  kind: TrustEventKind;
+  fromState: TrustState | null;
+  toState: TrustState;
+  actorNode: string;
+  occurredAt: string;
+  detail: string | null;
+}
+
+/**
+ * What the local operator may do. Mirrors `commands::trust::LocalAuthority`.
+ *
+ * Used to decide which controls to *render*. It is not the security control:
+ * the Rust core re-checks the same capabilities on every call, so a frontend
+ * that ignored these flags would still be refused.
+ */
+export interface LocalAuthority {
+  nodeId: string;
+  nodeName: string;
+  role: PeerRole;
+  capabilities: Capability[];
+  canEnroll: boolean;
+  canRevoke: boolean;
+}
+
+/**
  * A peer node. Mirrors `domain::peer::Peer`.
  *
  * Public identity material only — there is no command that returns any
@@ -112,6 +170,16 @@ export interface Peer {
   /** Events held locally that this peer has not acknowledged. */
   pendingEvents: number;
   firstSeen: string;
+
+  // --- Authorization ---
+  trustState: TrustState;
+  role: PeerRole;
+  grantedCapabilities: Capability[];
+  enrolledAt: string | null;
+  enrolledBy: string | null;
+  revokedAt: string | null;
+  revokedBy: string | null;
+  trustNotes: string | null;
 }
 
 /** A note appended to an incident. Mirrors `domain::incident::Observation`. */

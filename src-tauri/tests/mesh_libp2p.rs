@@ -117,7 +117,24 @@ fn two_nodes_discover_authenticate_and_synchronise_over_quic() {
     assert!(status.online);
     assert_eq!(status.transport, "quic");
 
-    // 2. Replication over the encrypted session.
+    // 2. Authentication is not authorization: nothing replicates until each
+    //    operator has explicitly enrolled the other.
+    //
+    //    Asserted as "not authorized" rather than as a specific state: the peer
+    //    is UNKNOWN the instant it is discovered and becomes PENDING once its
+    //    HELLO is processed, and which of the two is observed here is a race.
+    //    Neither permits anything, which is the property that matters.
+    let discovered_state = a.runtime.trust_state_of(&b.node_id).unwrap();
+    assert!(
+        !discovered_state.permits_authorized_operations(),
+        "a discovered peer must not be authorized on sight, but was {discovered_state}"
+    );
+    assert_ne!(discovered_state, securemesh_lib::domain::TrustState::Trusted);
+
+    a.runtime.approve_peer(&b.node_id, Some("demo peer")).unwrap();
+    b.runtime.approve_peer(&a.node_id, Some("demo peer")).unwrap();
+
+    // 3. Replication over the encrypted session, now that it is authorized.
     a.runtime.create_incident(incident("QUIC replication works")).unwrap();
 
     wait_until(&[&a, &b], "the incident to reach node B", || {
@@ -131,7 +148,7 @@ fn two_nodes_discover_authenticate_and_synchronise_over_quic() {
         "authorship must survive replication"
     );
 
-    // 3. Bidirectional.
+    // 4. Bidirectional.
     b.runtime.create_incident(incident("and back the other way")).unwrap();
     wait_until(&[&a, &b], "B's incident to reach node A", || {
         a.runtime.list_incidents(None).unwrap().len() == 2
@@ -140,7 +157,7 @@ fn two_nodes_discover_authenticate_and_synchronise_over_quic() {
     assert_eq!(a.runtime.list_incidents(None).unwrap().len(), 2);
     assert_eq!(b.runtime.list_incidents(None).unwrap().len(), 2);
 
-    // 4. Converged, with no duplication from repeated sync rounds.
+    // 5. Converged, with no duplication from repeated sync rounds.
     assert_eq!(a.runtime.database().count_events().unwrap(), 2);
     assert_eq!(b.runtime.database().count_events().unwrap(), 2);
     assert_eq!(a.runtime.database().count_event_conflicts().unwrap(), 0);

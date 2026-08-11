@@ -712,12 +712,83 @@ body {
 
 .peer-row {
   display: grid;
-  gap: 2px var(--space-3);
+  gap: var(--space-2) var(--space-3);
   grid-template-columns: minmax(0, 1fr) auto;
   padding: var(--space-3);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
   background: var(--bg-inset);
+}
+
+.peer-row__badges {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-self: end;
+}
+
+.peer-row__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.peer-row__role {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.button--compact {
+  min-height: 26px;
+  padding: 2px var(--space-3);
+  font-size: 12px;
+}
+
+/* Authorization state. Each has a distinct label as well as a colour, so the
+   state is never conveyed by colour alone. */
+.trust-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.trust-badge--unknown {
+  color: var(--text-secondary);
+  background: var(--state-inactive-soft);
+  border: 1px solid var(--border-default);
+}
+
+.trust-badge--pending {
+  color: var(--state-degraded);
+  background: var(--state-degraded-soft);
+}
+
+.trust-badge--trusted {
+  color: var(--state-ok);
+  background: var(--state-ok-soft);
+}
+
+.trust-badge--revoked {
+  color: var(--danger-fg);
+  background: var(--danger-bg);
+}
+
+.enrollment-notice {
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--state-degraded);
+  background: var(--state-degraded-soft);
+  color: var(--text-primary);
+  font-size: 13px;
 }
 
 .peer-row__identity {

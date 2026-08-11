@@ -18,6 +18,7 @@ pub mod events;
 pub mod incidents;
 pub mod migrations;
 pub mod nodes;
+pub mod trust;
 
 use crate::error::{CoreError, CoreResult};
 use crate::security::{audit, AuditEvent, AuditOutcome};
@@ -74,6 +75,13 @@ impl Database {
     }
 
     /// Borrows the connection.
+    ///
+    /// # The guard is not reentrant
+    ///
+    /// Never call another `&self` method of `Database` while holding the
+    /// returned guard — the mutex is a plain [`std::sync::Mutex`], so a nested
+    /// acquisition deadlocks the calling thread rather than failing. Read every
+    /// column you need in one query, or drop the guard first.
     ///
     /// A poisoned mutex means another thread panicked mid-query. Rather than
     /// propagating that panic, the poison is cleared and the guard recovered:

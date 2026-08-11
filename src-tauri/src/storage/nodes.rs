@@ -1,7 +1,7 @@
 //! Persistence for node records — this node, and (from Phase 2) its peers.
 
 use super::{format_timestamp, parse_timestamp, Database};
-use crate::domain::{ConnectionState, NodeRecord, NodeStatus, Peer};
+use crate::domain::{ConnectionState, NodeRecord, NodeStatus, Peer, PeerRole};
 use crate::error::{CoreError, CoreResult};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Row};
@@ -23,13 +23,24 @@ impl Database {
     ) -> CoreResult<()> {
         let now = Utc::now();
         let conn = self.conn();
+        // The local node bootstraps as a trusted administrator of its own
+        // trust store. This cannot live in the migration: on a fresh database
+        // migrations run before this row exists, so the migration's bootstrap
+        // UPDATE would match nothing. It is retained there as well, for
+        // databases upgraded from Phase 2 where the row already exists.
+        //
+        // On conflict the trust state is reasserted but the role is left
+        // alone, so a node deliberately provisioned as NODE is not silently
+        // promoted back to ADMIN on every restart.
         conn.execute(
-            "INSERT INTO nodes (id, node_name, public_key, status, last_seen, created_at)
-             VALUES (?1, ?2, ?3, 'LOCAL', ?4, ?5)
+            "INSERT INTO nodes (id, node_name, public_key, status, last_seen, created_at,
+                                trust_state, peer_role)
+             VALUES (?1, ?2, ?3, 'LOCAL', ?4, ?5, 'TRUSTED', 'ADMIN')
              ON CONFLICT (id) DO UPDATE SET
-                 node_name = excluded.node_name,
-                 status    = 'LOCAL',
-                 last_seen = excluded.last_seen",
+                 node_name   = excluded.node_name,
+                 status      = 'LOCAL',
+                 last_seen   = excluded.last_seen,
+                 trust_state = 'TRUSTED'",
             params![
                 node_id,
                 node_name,
@@ -127,71 +138,79 @@ impl Database {
         let conn = self.conn();
         let mut statement = conn.prepare(
             "SELECT id, node_name, public_key, transport_peer_id, last_seen, protocol_version,
-                    capabilities, equivocating, created_at
+                    capabilities, equivocating, created_at,
+                    trust_state, peer_role, enrolled_at, enrolled_by, revoked_at, revoked_by,
+                    trust_notes
              FROM nodes
              WHERE status <> 'LOCAL'
-             ORDER BY node_name ASC",
+             ORDER BY
+                 -- Peers awaiting a decision come first: they are the only rows
+                 -- that need the operator to do something.
+                 CASE trust_state
+                     WHEN 'PENDING' THEN 0
+                     WHEN 'TRUSTED' THEN 1
+                     WHEN 'UNKNOWN' THEN 2
+                     ELSE 3
+                 END,
+                 node_name ASC",
         )?;
 
         let rows = statement.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, Option<String>>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, Option<i64>>(5)?,
-                row.get::<_, String>(6)?,
-                row.get::<_, i64>(7)?,
-                row.get::<_, String>(8)?,
-            ))
+            Ok(NodeTrustRow {
+                id: row.get(0)?,
+                node_name: row.get(1)?,
+                public_key: row.get(2)?,
+                transport_peer_id: row.get(3)?,
+                last_seen: row.get(4)?,
+                protocol_version: row.get(5)?,
+                capabilities: row.get(6)?,
+                equivocating: row.get(7)?,
+                created_at: row.get(8)?,
+                trust_state: row.get(9)?,
+                peer_role: row.get(10)?,
+                enrolled_at: row.get(11)?,
+                enrolled_by: row.get(12)?,
+                revoked_at: row.get(13)?,
+                revoked_by: row.get(14)?,
+                trust_notes: row.get(15)?,
+            })
         })?;
 
-        let mut collected = Vec::new();
-        for row in rows {
-            let (id, name, key, transport, last_seen, version, capabilities, equivocating, first) =
-                row?;
-            collected.push((
-                id,
-                name,
-                key,
-                transport,
-                last_seen,
-                version,
-                capabilities,
-                equivocating,
-                first,
-            ));
-        }
+        let collected: Vec<NodeTrustRow> = rows.collect::<Result<_, _>>()?;
         drop(statement);
         drop(conn);
 
         let mut peers = Vec::with_capacity(collected.len());
-        for (id, node_name, public_key, transport, last_seen, version, capabilities, equiv, first) in
-            collected
-        {
-            let pending = self.pending_events_for_peer(&id)?;
+        for row in collected {
+            let pending = self.pending_events_for_peer(&row.id)?;
+            let role: PeerRole = row.peer_role.parse()?;
+
             peers.push(Peer {
-                connection_state: if connected.iter().any(|c| c == &id) {
+                connection_state: if connected.iter().any(|c| c == &row.id) {
                     ConnectionState::Connected
                 } else {
                     ConnectionState::Disconnected
                 },
-                node_id: id,
-                node_name,
-                public_key,
-                transport_peer_id: transport,
-                last_seen: match last_seen {
-                    Some(ref value) => Some(parse_timestamp("last_seen", value)?),
-                    None => None,
-                },
-                protocol_version: version.and_then(|v| u16::try_from(v).ok()),
+                trust_state: row.trust_state.parse()?,
+                role,
+                granted_capabilities: role.capabilities(),
+                enrolled_at: optional_timestamp("enrolled_at", row.enrolled_at.as_deref())?,
+                enrolled_by: row.enrolled_by,
+                revoked_at: optional_timestamp("revoked_at", row.revoked_at.as_deref())?,
+                revoked_by: row.revoked_by,
+                trust_notes: row.trust_notes,
+                node_id: row.id,
+                node_name: row.node_name,
+                public_key: row.public_key,
+                transport_peer_id: row.transport_peer_id,
+                last_seen: optional_timestamp("last_seen", row.last_seen.as_deref())?,
+                protocol_version: row.protocol_version.and_then(|v| u16::try_from(v).ok()),
                 // A malformed capabilities column must not take the dashboard
                 // down, so it degrades to "none announced".
-                capabilities: serde_json::from_str(&capabilities).unwrap_or_default(),
-                equivocating: equiv != 0,
+                capabilities: serde_json::from_str(&row.capabilities).unwrap_or_default(),
+                equivocating: row.equivocating != 0,
                 pending_events: pending,
-                first_seen: parse_timestamp("created_at", &first)?,
+                first_seen: parse_timestamp("created_at", &row.created_at)?,
             });
         }
         Ok(peers)
@@ -255,6 +274,40 @@ impl Database {
             |row| row.get(0),
         )?;
         Ok(count.max(0) as u64)
+    }
+}
+
+/// The raw columns behind an assembled [`Peer`].
+///
+/// Named rather than a tuple because sixteen positional fields is how column
+/// order silently drifts away from field order.
+struct NodeTrustRow {
+    id: String,
+    node_name: String,
+    public_key: String,
+    transport_peer_id: Option<String>,
+    last_seen: Option<String>,
+    protocol_version: Option<i64>,
+    capabilities: String,
+    equivocating: i64,
+    created_at: String,
+    trust_state: String,
+    peer_role: String,
+    enrolled_at: Option<String>,
+    enrolled_by: Option<String>,
+    revoked_at: Option<String>,
+    revoked_by: Option<String>,
+    trust_notes: Option<String>,
+}
+
+/// Parses a nullable timestamp column.
+fn optional_timestamp(
+    column: &str,
+    value: Option<&str>,
+) -> CoreResult<Option<chrono::DateTime<chrono::Utc>>> {
+    match value {
+        Some(text) => Ok(Some(parse_timestamp(column, text)?)),
+        None => Ok(None),
     }
 }
 

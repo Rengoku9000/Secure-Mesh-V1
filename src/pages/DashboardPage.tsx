@@ -10,6 +10,7 @@ import { PeerPanel } from "../features/network/PeerPanel";
 import {
   CoreError,
   getIncidents,
+  getLocalAuthority,
   getNetworkStatus,
   getNodeIdentity,
   getPeers,
@@ -17,6 +18,7 @@ import {
 } from "../lib/ipc";
 import type {
   Incident,
+  LocalAuthority,
   NetworkStatus,
   Peer,
   PublicIdentity,
@@ -42,6 +44,7 @@ export function DashboardPage() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [network, setNetwork] = useState<NetworkStatus | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
+  const [authority, setAuthority] = useState<LocalAuthority | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -52,20 +55,28 @@ export function DashboardPage() {
     try {
       // Fetched together so the header, status panel, peer list and timeline
       // always describe the same moment.
-      const [nextIdentity, nextStatus, nextNetwork, nextPeers, nextIncidents] =
-        await Promise.all([
-          getNodeIdentity(),
-          getSystemStatus(),
-          getNetworkStatus(),
-          getPeers(),
-          getIncidents(),
-        ]);
+      const [
+        nextIdentity,
+        nextStatus,
+        nextNetwork,
+        nextPeers,
+        nextIncidents,
+        nextAuthority,
+      ] = await Promise.all([
+        getNodeIdentity(),
+        getSystemStatus(),
+        getNetworkStatus(),
+        getPeers(),
+        getIncidents(),
+        getLocalAuthority(),
+      ]);
 
       setIdentity(nextIdentity);
       setSystemStatus(nextStatus);
       setNetwork(nextNetwork);
       setPeers(nextPeers);
       setIncidents(nextIncidents);
+      setAuthority(nextAuthority);
       setError(null);
     } catch (raw) {
       const coreError = raw as CoreError;
@@ -124,7 +135,12 @@ export function DashboardPage() {
           </Panel>
 
           <div style={{ display: "grid", gap: "var(--space-5)" }}>
-            <PeerPanel peers={peers} network={network} />
+            <PeerPanel
+              peers={peers}
+              network={network}
+              authority={authority}
+              onChanged={() => void refresh()}
+            />
             <SystemStatusPanel status={systemStatus} />
             <NodeIdentityPanel identity={identity} />
           </div>

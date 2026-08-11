@@ -13,6 +13,7 @@
 //! Nothing here is transport-specific. The libp2p peer ID is carried as an
 //! opaque string so the domain layer never depends on libp2p types.
 
+use crate::domain::trust::{Capability, PeerRole, TrustState};
 use crate::error::{CoreError, CoreResult};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -88,12 +89,41 @@ pub struct Peer {
     /// Events held locally that this peer has not acknowledged.
     pub pending_events: u64,
     pub first_seen: DateTime<Utc>,
+
+    // --- Authorization (Phase 2.5) ----------------------------------------
+    /// Whether this peer is authorized to participate. Independent of
+    /// `connection_state`: a peer can be connected and revoked at once.
+    pub trust_state: TrustState,
+    /// The role this peer holds, which determines its capabilities.
+    pub role: PeerRole,
+    /// Capabilities derived from the role, for display.
+    pub granted_capabilities: Vec<Capability>,
+    pub enrolled_at: Option<DateTime<Utc>>,
+    /// Node whose operator approved this peer.
+    pub enrolled_by: Option<String>,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub revoked_by: Option<String>,
+    /// Operator note attached to the most recent decision.
+    pub trust_notes: Option<String>,
 }
 
 impl Peer {
     /// Whether replication with this peer should proceed.
+    ///
+    /// Authorization comes first: an unauthorized peer is not replicated with
+    /// however reachable it is. This is a convenience for display and for
+    /// callers that already hold a `Peer`; the sync engine enforces the same
+    /// rule directly against the trust store, so nothing depends on this
+    /// assembled value being fresh.
     pub fn is_replicating(&self) -> bool {
-        self.connection_state == ConnectionState::Connected && !self.equivocating
+        self.trust_state.permits_authorized_operations()
+            && self.connection_state == ConnectionState::Connected
+            && !self.equivocating
+    }
+
+    /// Whether an operator decision is outstanding for this peer.
+    pub fn awaiting_decision(&self) -> bool {
+        self.trust_state == TrustState::Pending
     }
 }
 
@@ -102,7 +132,23 @@ mod tests {
     use super::*;
 
     fn peer(state: ConnectionState, equivocating: bool) -> Peer {
+        trusted_peer(state, equivocating, TrustState::Trusted)
+    }
+
+    fn trusted_peer(
+        state: ConnectionState,
+        equivocating: bool,
+        trust_state: TrustState,
+    ) -> Peer {
         Peer {
+            trust_state,
+            role: PeerRole::Node,
+            granted_capabilities: PeerRole::Node.capabilities(),
+            enrolled_at: None,
+            enrolled_by: None,
+            revoked_at: None,
+            revoked_by: None,
+            trust_notes: None,
             node_id: "a".repeat(64),
             node_name: "SM-AAAAA".to_string(),
             public_key: "b".repeat(64),
@@ -146,5 +192,25 @@ mod tests {
     #[test]
     fn an_equivocating_peer_never_replicates_even_when_connected() {
         assert!(!peer(ConnectionState::Connected, true).is_replicating());
+    }
+
+    #[test]
+    fn an_unauthorized_peer_never_replicates_however_reachable_it_is() {
+        for state in [TrustState::Unknown, TrustState::Pending, TrustState::Revoked] {
+            let peer = trusted_peer(ConnectionState::Connected, false, state);
+            assert!(
+                !peer.is_replicating(),
+                "{state} must not replicate even while connected"
+            );
+        }
+    }
+
+    #[test]
+    fn only_a_pending_peer_awaits_a_decision() {
+        assert!(trusted_peer(ConnectionState::Connected, false, TrustState::Pending)
+            .awaiting_decision());
+        for state in [TrustState::Unknown, TrustState::Trusted, TrustState::Revoked] {
+            assert!(!trusted_peer(ConnectionState::Connected, false, state).awaiting_decision());
+        }
     }
 }

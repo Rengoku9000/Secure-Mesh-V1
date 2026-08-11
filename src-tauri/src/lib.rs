@@ -74,6 +74,11 @@ pub fn run() {
             commands::get_incident,
             commands::get_observations,
             commands::add_observation,
+            commands::get_local_authority,
+            commands::approve_peer,
+            commands::reject_peer,
+            commands::revoke_peer,
+            commands::get_trust_audit_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -150,14 +155,37 @@ fn spawn_mesh_loop(runtime: Arc<NodeRuntime>) {
         .spawn(move || {
             let mut ticks: u32 = 0;
             loop {
-                if let Err(error) = runtime.sync_tick() {
+                match runtime.sync_tick() {
+                    // Silent when nothing happened, so an idle mesh stays
+                    // quiet; anything else is worth a line, because "the peers
+                    // are connected but nothing is replicating" is otherwise
+                    // invisible from outside.
+                    Ok(report) if report != Default::default() => {
+                        eprintln!("[securemesh] sync {report:?}");
+                    }
+                    Ok(_) => {}
                     // One bad round must not stop replication for good.
-                    eprintln!("[securemesh] sync tick failed: {}", error.message());
+                    Err(error) => {
+                        eprintln!("[securemesh] sync tick failed: {}", error.message());
+                    }
                 }
 
                 ticks = ticks.wrapping_add(1);
                 if ticks.is_multiple_of(RESYNC_EVERY) {
-                    let _ = runtime.request_sync();
+                    match runtime.authorized_peer_count() {
+                        Ok((0, connected)) if connected > 0 => eprintln!(
+                            "[securemesh] {connected} peer(s) connected, none authorized — \
+                             enrollment required before anything is exchanged"
+                        ),
+                        Ok((authorized, connected)) if connected > 0 => eprintln!(
+                            "[securemesh] sync round: {authorized}/{connected} peer(s) authorized"
+                        ),
+                        _ => {}
+                    }
+
+                    if let Err(error) = runtime.request_sync() {
+                        eprintln!("[securemesh] sync round failed: {}", error.message());
+                    }
                 }
 
                 std::thread::sleep(TICK);

@@ -44,9 +44,11 @@
 //! - **Authenticated end to end.** Each event is verified against its *origin's*
 //!   key, not the key of the peer that delivered it.
 
+use crate::domain::trust::{Capability, TrustState};
 use crate::domain::MeshEvent as DomainEvent;
 use crate::error::{CoreError, CoreResult};
 use crate::identity::NodeIdentity;
+use crate::security::{audit, AuditEvent, AuditOutcome};
 use crate::networking::protocol::{Envelope, MessageBody, OriginWatermark};
 use crate::networking::{MeshEvent, MeshTransport, PeerDescriptor};
 use crate::storage::events::{ApplyOutcome, MAX_SYNC_BATCH};
@@ -175,6 +177,10 @@ impl<T: MeshTransport> SyncEngine<T> {
             ));
         }
 
+        // Registering records that this key exists and is reachable. It is
+        // deliberately *not* an authorization decision: a peer that has never
+        // been enrolled stays UNKNOWN, and UNKNOWN denies everything that
+        // matters.
         database.register_peer(
             &peer.node_id,
             &peer.public_key,
@@ -182,6 +188,9 @@ impl<T: MeshTransport> SyncEngine<T> {
         )?;
         self.connected.insert(peer.node_id.clone(), peer.clone());
 
+        // The handshake is offered to every authenticated peer regardless of
+        // trust, so an unenrolled node can present itself and an operator can
+        // see it waiting. It carries no operational data.
         self.send(
             identity,
             &peer.node_id,
@@ -191,7 +200,53 @@ impl<T: MeshTransport> SyncEngine<T> {
                 capabilities: capabilities(),
             },
         )?;
-        self.request_sync(database, identity, &peer.node_id)?;
+
+        // Sync is opened only toward an authorized peer. Asking an unenrolled
+        // node for its log would disclose which origins this node holds.
+        if database
+            .trust_state_of(&peer.node_id)?
+            .permits_authorized_operations()
+        {
+            self.request_sync(database, identity, &peer.node_id)?;
+        }
+        Ok(())
+    }
+
+    /// Refuses an operation unless the peer is authorized for it.
+    ///
+    /// The single gate every operational message passes through. It reads the
+    /// trust store on each call rather than trusting a cached value, so a
+    /// revocation takes effect on the very next message — including on a
+    /// session that was already open when the operator revoked.
+    fn authorize(
+        database: &Database,
+        peer_node_id: &str,
+        capability: Capability,
+    ) -> CoreResult<()> {
+        let state = database.trust_state_of(peer_node_id)?;
+        if !state.permits_authorized_operations() {
+            audit(
+                AuditEvent::AuthorizationDenied,
+                AuditOutcome::Failure,
+                &format!("peer={peer_node_id} state={state} capability={capability}"),
+            );
+            return Err(CoreError::validation(format!(
+                "peer is {state} and is not authorized for {capability}"
+            )));
+        }
+
+        let role = database.role_of(peer_node_id)?;
+        if !role.grants(capability) {
+            audit(
+                AuditEvent::AuthorizationDenied,
+                AuditOutcome::Failure,
+                &format!("peer={peer_node_id} role={role} capability={capability}"),
+            );
+            return Err(CoreError::validation(format!(
+                "peer's role {role} does not grant {capability}"
+            )));
+        }
+
         Ok(())
     }
 
@@ -234,17 +289,43 @@ impl<T: MeshTransport> SyncEngine<T> {
         let mut report = SyncReport::default();
 
         match envelope.body {
-            MessageBody::Hello { protocol_version, .. } => {
+            MessageBody::Hello {
+                protocol_version,
+                ref node_name,
+                ref capabilities,
+            } => {
                 database.record_peer_protocol(&from.node_id, protocol_version)?;
+
+                // HELLO *is* the enrollment request. It already carries the
+                // presented name, capabilities and version, and is signed by
+                // the peer's key, so a separate message type would add wire
+                // surface without adding information.
+                //
+                // This can only move UNKNOWN to PENDING. It never grants
+                // anything, and it cannot lift a REVOKED peer back out of
+                // denial — otherwise reconnecting would launder a revocation.
+                let state = database.record_enrollment_request(
+                    identity,
+                    &from.node_id,
+                    node_name,
+                    capabilities,
+                )?;
+
                 self.send(
                     identity,
                     &from.node_id,
                     MessageBody::PeerInfo {
                         node_name: identity.node_name().to_string(),
                         public_key: identity.public_key_hex(),
-                        capabilities: capabilities(),
+                        capabilities: capabilities_for(state),
                     },
                 )?;
+
+                // A peer approved while it was already connected gets its sync
+                // round here, without waiting for a reconnection.
+                if state.permits_authorized_operations() {
+                    self.request_sync(database, identity, &from.node_id)?;
+                }
             }
 
             MessageBody::PeerInfo { public_key, .. } => {
@@ -257,15 +338,21 @@ impl<T: MeshTransport> SyncEngine<T> {
                 }
             }
 
+            // Everything below carries or requests operational data, so each
+            // one is gated. An unauthorized peer gets an error, which the
+            // caller counts as a rejected message; it never reaches storage.
             MessageBody::SyncRequest { have } => {
+                Self::authorize(database, &from.node_id, Capability::IncidentSync)?;
                 self.serve_sync_request(database, identity, &from.node_id, have, &envelope.message_id)?;
             }
 
             MessageBody::SyncResponse { .. } => {
+                Self::authorize(database, &from.node_id, Capability::IncidentSync)?;
                 // Advisory only: the batches carry the data. Nothing to do.
             }
 
             MessageBody::EventBatch { origin_node, events, .. } => {
+                Self::authorize(database, &from.node_id, Capability::IncidentSync)?;
                 report.merge(self.apply_batch(
                     database,
                     identity,
@@ -277,6 +364,7 @@ impl<T: MeshTransport> SyncEngine<T> {
             }
 
             MessageBody::Ack { origin_node, accepted_through, .. } => {
+                Self::authorize(database, &from.node_id, Capability::IncidentSync)?;
                 database.record_peer_ack(&from.node_id, &origin_node, accepted_through)?;
                 database.refresh_local_sync_status(identity.node_id())?;
             }
@@ -450,13 +538,50 @@ impl<T: MeshTransport> SyncEngine<T> {
         identity: &NodeIdentity,
     ) -> CoreResult<()> {
         for peer_node_id in self.connected.keys() {
-            self.request_sync(database, identity, peer_node_id)?;
+            // Re-read trust on every round, so a revocation stops future
+            // rounds immediately rather than at the next reconnection.
+            if database
+                .trust_state_of(peer_node_id)?
+                .permits_authorized_operations()
+            {
+                self.request_sync(database, identity, peer_node_id)?;
+            }
         }
         Ok(())
+    }
+
+    /// How many connected peers are currently authorized to synchronise.
+    ///
+    /// Diagnostic: "connected but nothing replicating" is otherwise
+    /// indistinguishable from "connected and up to date".
+    pub fn authorized_peer_count(&self, database: &Database) -> CoreResult<(usize, usize)> {
+        let mut authorized = 0;
+        for peer_node_id in self.connected.keys() {
+            if database
+                .trust_state_of(peer_node_id)?
+                .permits_authorized_operations()
+            {
+                authorized += 1;
+            }
+        }
+        Ok((authorized, self.connected.len()))
     }
 }
 
 /// Capabilities this build announces, for forward compatibility.
 fn capabilities() -> Vec<String> {
     vec!["sync/1".to_string(), "incidents/1".to_string()]
+}
+
+/// Capabilities announced to a peer, reflecting what it is actually allowed.
+///
+/// An unauthorized peer is told it may enroll and nothing else. This is
+/// courtesy, not enforcement — the receiving node is free to ignore it, and
+/// this node refuses unauthorized operations regardless of what it advertised.
+fn capabilities_for(state: TrustState) -> Vec<String> {
+    if state.permits_authorized_operations() {
+        capabilities()
+    } else {
+        vec!["enroll/1".to_string()]
+    }
 }

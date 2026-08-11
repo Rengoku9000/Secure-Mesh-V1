@@ -13,12 +13,15 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   CoreErrorCode,
   Incident,
+  LocalAuthority,
   NetworkStatus,
   NewIncident,
   Observation,
   Peer,
   PublicIdentity,
   SystemStatus,
+  TrustEvent,
+  TrustState,
 } from "../types/core";
 
 /**
@@ -116,6 +119,40 @@ export function getIncident(id: string): Promise<Incident> {
 /** Known peers, with live connection state and per-peer sync backlog. */
 export function getPeers(): Promise<Peer[]> {
   return call<Peer[]>("get_peers");
+}
+
+/**
+ * What the local operator is permitted to do.
+ *
+ * Used only to decide which controls to render. The Rust core enforces the
+ * same capabilities on every call below, so hiding a button is presentation,
+ * never protection.
+ */
+export function getLocalAuthority(): Promise<LocalAuthority> {
+  return call<LocalAuthority>("get_local_authority");
+}
+
+/** Authorizes a peer, or reinstates a revoked one. */
+export function approvePeer(nodeId: string, note?: string): Promise<TrustState> {
+  return call<TrustState>("approve_peer", { nodeId, note: note ?? null });
+}
+
+/** Refuses a peer that has never been authorized. */
+export function rejectPeer(nodeId: string, note?: string): Promise<TrustState> {
+  return call<TrustState>("reject_peer", { nodeId, note: note ?? null });
+}
+
+/** Withdraws authorization from a peer. */
+export function revokePeer(nodeId: string, note?: string): Promise<TrustState> {
+  return call<TrustState>("revoke_peer", { nodeId, note: note ?? null });
+}
+
+/** The local trust audit log, newest first. */
+export function getTrustAuditLog(nodeId?: string, limit?: number): Promise<TrustEvent[]> {
+  return call<TrustEvent[]>("get_trust_audit_log", {
+    nodeId: nodeId ?? null,
+    limit: limit ?? null,
+  });
 }
 
 /** Observations appended to an incident, from this node or any peer. */

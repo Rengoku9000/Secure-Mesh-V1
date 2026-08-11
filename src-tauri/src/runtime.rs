@@ -9,6 +9,7 @@
 //! and driven directly from integration tests.
 
 use crate::domain::event::{EventKind, IncidentCreatedPayload, IncidentObservationPayload};
+use crate::domain::trust::{Capability, PeerRole, TrustEvent, TrustState};
 use crate::domain::{Incident, MeshEvent, NewIncident, Observation, SyncStatus};
 use crate::error::{CoreError, CoreResult};
 use crate::identity::keystore::FileKeyStore;
@@ -111,6 +112,17 @@ impl NodeRuntime {
         engine.tick(&self.database, &self.identity)
     }
 
+    /// How many connected peers are authorized, and how many are connected.
+    pub fn authorized_peer_count(&self) -> CoreResult<(usize, usize)> {
+        let Some(mesh) = &self.mesh else {
+            return Ok((0, 0));
+        };
+        let engine = mesh
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        engine.authorized_peer_count(&self.database)
+    }
+
     /// Opens a fresh sync round with every connected peer.
     ///
     /// Needed because a session that is already open receives no further
@@ -151,6 +163,86 @@ impl NodeRuntime {
     /// Whether a mesh transport is attached to this node.
     pub fn mesh_attached(&self) -> bool {
         self.mesh.is_some()
+    }
+
+    // --- Peer authorization (Phase 2.5) -----------------------------------
+
+    /// The role this node's own operator holds.
+    pub fn local_role(&self) -> CoreResult<PeerRole> {
+        self.database.role_of(self.identity.node_id())
+    }
+
+    /// Refuses the operation unless the local operator holds `capability`.
+    ///
+    /// Every trust-changing entry point goes through here, so authorization is
+    /// enforced in the core rather than by whether the UI drew a button. A
+    /// denial is audited: an attempt to use authority one does not hold is
+    /// worth a record.
+    fn require_local_capability(&self, capability: Capability) -> CoreResult<()> {
+        let role = self.local_role()?;
+        if role.grants(capability) {
+            return Ok(());
+        }
+
+        audit(
+            AuditEvent::AuthorizationDenied,
+            AuditOutcome::Failure,
+            &format!(
+                "capability={capability} role={role} node={}",
+                self.identity.node_name()
+            ),
+        );
+        Err(CoreError::validation(format!(
+            "this node is not authorized to {capability}; its role is {role}"
+        )))
+    }
+
+    /// Approves a peer, or reinstates a revoked one.
+    ///
+    /// Requires [`Capability::PeerEnroll`]. Nothing a peer sends can reach this
+    /// path: enrollment decisions originate only from the local operator, which
+    /// is what stops an approved peer from promoting itself or anyone else.
+    pub fn approve_peer(&self, node_id: &str, note: Option<&str>) -> CoreResult<TrustState> {
+        self.require_local_capability(Capability::PeerEnroll)?;
+        self.database.approve_peer(&self.identity, node_id, note)
+    }
+
+    /// Refuses a peer that has never been trusted. Requires
+    /// [`Capability::PeerEnroll`].
+    pub fn reject_peer(&self, node_id: &str, note: Option<&str>) -> CoreResult<TrustState> {
+        self.require_local_capability(Capability::PeerEnroll)?;
+        self.database.reject_peer(&self.identity, node_id, note)
+    }
+
+    /// Withdraws authorization from a peer. Requires
+    /// [`Capability::PeerRevoke`].
+    pub fn revoke_peer(&self, node_id: &str, note: Option<&str>) -> CoreResult<TrustState> {
+        self.require_local_capability(Capability::PeerRevoke)?;
+        self.database.revoke_peer(&self.identity, node_id, note)
+    }
+
+    /// The authorization state of a peer.
+    pub fn trust_state_of(&self, node_id: &str) -> CoreResult<TrustState> {
+        self.database.trust_state_of(node_id)
+    }
+
+    /// The local trust audit log, newest first.
+    pub fn trust_audit_log(
+        &self,
+        node_id: Option<&str>,
+        limit: u32,
+    ) -> CoreResult<Vec<TrustEvent>> {
+        self.database.trust_audit_log(node_id, limit)
+    }
+
+    /// Sets this node's own role.
+    ///
+    /// Provisioning hook for locking a field node down to `NODE`, so its
+    /// operator cannot enroll peers. On hardware the operator physically
+    /// controls this is a policy control, not a cryptographic one — see
+    /// `docs/security/SECURITY.md`.
+    pub fn set_local_role(&self, role: PeerRole) -> CoreResult<()> {
+        self.database.set_local_role(self.identity.node_id(), role)
     }
 
     /// Gives Phase 1 incidents an event, so an upgraded node can replicate the

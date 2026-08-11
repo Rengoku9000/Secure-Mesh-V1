@@ -24,6 +24,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "event_log",
         sql: include_str!("../../migrations/002_event_log.sql"),
     },
+    Migration {
+        version: 3,
+        name: "peer_trust",
+        sql: include_str!("../../migrations/003_peer_trust.sql"),
+    },
 ];
 
 struct Migration {
@@ -142,8 +147,12 @@ mod tests {
         .unwrap();
 
         let applied = apply(&mut conn).unwrap();
-        assert_eq!(applied, 1, "only migration 002 should run");
-        assert_eq!(current_version(&conn).unwrap(), 2);
+        assert_eq!(
+            applied,
+            target_version() as usize - 1,
+            "every migration after 001 should run, and no more"
+        );
+        assert_eq!(current_version(&conn).unwrap(), target_version());
 
         let description: String = conn
             .query_row("SELECT description FROM incidents WHERE id = 'inc-1'", [], |r| {
@@ -161,6 +170,45 @@ mod tests {
             )
             .unwrap();
         assert!(origin.is_none());
+
+        // Phase 2.5: the pre-existing local row is bootstrapped as the
+        // administrator of its own trust store.
+        let (trust, role): (String, String) = conn
+            .query_row(
+                "SELECT trust_state, peer_role FROM nodes WHERE id = 'node-1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(trust, "TRUSTED");
+        assert_eq!(role, "ADMIN");
+    }
+
+    #[test]
+    fn upgrading_does_not_silently_carry_forward_implicit_peer_trust() {
+        // A Phase 2 database synchronised with any peer that connected. After
+        // the upgrade those peers must be unauthorised until an operator says
+        // otherwise — failing closed is the entire point of the phase.
+        let mut conn = memory_conn();
+        conn.execute_batch(MIGRATIONS[0].sql).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute(
+            "INSERT INTO nodes (id, node_name, public_key, status, last_seen, created_at)
+             VALUES ('peer-1', 'SM-BBBBB', 'bb', 'ONLINE', NULL, '2026-01-01T00:00:00.000Z')",
+            [],
+        )
+        .unwrap();
+
+        apply(&mut conn).unwrap();
+
+        let trust: String = conn
+            .query_row(
+                "SELECT trust_state FROM nodes WHERE id = 'peer-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(trust, "UNKNOWN", "existing peers must not stay implicitly trusted");
     }
 
     #[test]

@@ -24,6 +24,11 @@ pub enum AuditEvent {
     DatabaseOpened,
     /// An incident record was written locally.
     IncidentCreated,
+    /// A peer's authorization changed: enrolled, approved, rejected, revoked,
+    /// or reinstated.
+    PeerTrustChanged,
+    /// An operation was refused because the caller lacked authorization.
+    AuthorizationDenied,
 }
 
 impl AuditEvent {
@@ -34,6 +39,8 @@ impl AuditEvent {
             AuditEvent::PublicIdentityDisclosed => "identity.public_disclosed",
             AuditEvent::DatabaseOpened => "storage.database_opened",
             AuditEvent::IncidentCreated => "incident.created",
+            AuditEvent::PeerTrustChanged => "peer.trust_changed",
+            AuditEvent::AuthorizationDenied => "authorization.denied",
         }
     }
 }

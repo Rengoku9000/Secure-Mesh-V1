@@ -13,6 +13,7 @@
 pub mod identity;
 pub mod incidents;
 pub mod system;
+pub mod trust;
 
 // Glob re-exports rather than named ones: `#[tauri::command]` expands to a
 // hidden `__cmd__*` item alongside each function, and `generate_handler!`
@@ -20,6 +21,7 @@ pub mod system;
 pub use identity::*;
 pub use incidents::*;
 pub use system::*;
+pub use trust::*;
 
 use crate::runtime::NodeRuntime;
 use std::sync::Arc;

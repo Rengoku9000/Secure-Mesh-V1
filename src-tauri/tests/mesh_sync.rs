@@ -1,8 +1,8 @@
-//! Distributed-systems behaviour of the SecureMesh mesh.
+﻿//! Distributed-systems behaviour of the SecureMesh mesh.
 //!
 //! These tests run complete `NodeRuntime`s over the deterministic loopback
 //! transport. That is a real [`MeshTransport`] implementation, so the code
-//! under test is the code that ships — only the wire is swapped for an
+//! under test is the code that ships â€” only the wire is swapped for an
 //! in-process one.
 //!
 //! Doing it this way is deliberate. Partition, replay, reordering and restart
@@ -104,6 +104,27 @@ fn settle(nodes: &[&TestNode]) {
     panic!("the mesh did not settle: sync is not converging");
 }
 
+/// Connects two nodes and completes mutual enrollment.
+///
+/// From Phase 2.5 a connection alone replicates nothing: the handshake proves
+/// identity, and an explicit operator decision grants authorization. Every test
+/// that expects synchronisation therefore has to enroll, which is exactly the
+/// behaviour change this phase introduces â€” so the step is written out rather
+/// than hidden inside `spawn`.
+fn connect_and_enroll(network: &LoopbackNetwork, a: &TestNode, b: &TestNode) {
+    network.connect(&a.node_id, &b.node_id);
+    // Exchanging HELLO moves each node from UNKNOWN to PENDING on the other.
+    settle(&[a, b]);
+
+    a.runtime.approve_peer(&b.node_id, None).unwrap();
+    b.runtime.approve_peer(&a.node_id, None).unwrap();
+
+    // Approval alone does not push anything; a round has to be opened.
+    a.runtime.request_sync().unwrap();
+    b.runtime.request_sync().unwrap();
+    settle(&[a, b]);
+}
+
 fn incident(description: &str, severity: &str) -> NewIncident {
     NewIncident {
         description: description.to_string(),
@@ -125,8 +146,7 @@ fn two_nodes_converge_after_connecting() {
 
     a.runtime.create_incident(incident("Bridge collapsed", "HIGH")).unwrap();
 
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     assert_eq!(b.incidents(), vec!["Bridge collapsed".to_string()]);
     assert_eq!(a.incidents(), b.incidents());
@@ -141,8 +161,7 @@ fn replication_is_bidirectional() {
     a.runtime.create_incident(incident("from A", "LOW")).unwrap();
     b.runtime.create_incident(incident("from B", "HIGH")).unwrap();
 
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     let expected = vec!["from A".to_string(), "from B".to_string()];
     assert_eq!(a.incidents(), expected);
@@ -156,8 +175,7 @@ fn a_replicated_incident_keeps_its_original_author() {
     let b = spawn(&network);
 
     a.runtime.create_incident(incident("authored by A", "HIGH")).unwrap();
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     let replicated = &b.runtime.list_incidents(None).unwrap()[0];
     assert_eq!(replicated.created_by, a.node_id);
@@ -170,8 +188,7 @@ fn events_created_after_connecting_still_replicate() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     // No new PeerConnected event will fire, so this exercises the periodic
     // re-sync rather than the on-connect path.
@@ -191,8 +208,7 @@ fn observations_replicate_alongside_incidents() {
     let created = a.runtime.create_incident(incident("Initial sighting", "LOW")).unwrap();
     a.runtime.add_observation(&created.id, "Situation worsening").unwrap();
 
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     assert_eq!(b.event_count(), 2);
     let observations = b.runtime.list_observations(&created.id).unwrap();
@@ -210,8 +226,7 @@ fn incidents_created_during_a_partition_merge_on_reconnect() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     // Partition.
     network.disconnect(&a.node_id, &b.node_id);
@@ -225,8 +240,7 @@ fn incidents_created_during_a_partition_merge_on_reconnect() {
     assert_eq!(b.incidents(), vec!["INC-B".to_string()]);
 
     // Heal.
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     // Union, with nothing overwritten by a timestamp comparison.
     let expected = vec!["INC-A".to_string(), "INC-B".to_string()];
@@ -249,8 +263,7 @@ fn a_long_partition_with_many_events_reconciles_fully() {
         b.runtime.create_incident(incident(&format!("B-{n:02}"), "LOW")).unwrap();
     }
 
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     assert_eq!(a.incidents().len(), 40);
     assert_eq!(b.incidents().len(), 40);
@@ -268,8 +281,7 @@ fn concurrent_creation_produces_no_conflicts() {
     a.runtime.create_incident(incident("simultaneous A", "HIGH")).unwrap();
     b.runtime.create_incident(incident("simultaneous B", "HIGH")).unwrap();
 
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     assert_eq!(a.incidents().len(), 2);
     assert_eq!(b.incidents().len(), 2);
@@ -287,10 +299,9 @@ fn offline_scenario_disconnect_create_restart_reconnect() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    // 1. Connect and synchronise a first incident.
-    network.connect(&a.node_id, &b.node_id);
+    // 1. Enroll, connect, and synchronise a first incident.
     a.runtime.create_incident(incident("before disconnect", "MEDIUM")).unwrap();
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
     assert_eq!(b.incidents(), vec!["before disconnect".to_string()]);
 
     // 2. B goes away.
@@ -306,8 +317,7 @@ fn offline_scenario_disconnect_create_restart_reconnect() {
     assert_eq!(a.incidents().len(), 3, "restart must lose nothing");
 
     // 5. B reconnects and catches up.
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     let expected = vec![
         "before disconnect".to_string(),
@@ -332,11 +342,15 @@ fn a_node_restarted_mid_sync_resumes_without_loss() {
         a.runtime.create_incident(incident(&format!("event {n}"), "LOW")).unwrap();
     }
 
-    network.connect(&a.node_id, &b.node_id);
-    // A single tick each: the round is deliberately left unfinished.
+    connect_and_enroll(&network, &a, &b);
+    // A single tick each after new work: the round is deliberately left
+    // unfinished so the restart lands mid-conversation.
+    a.runtime.request_sync().unwrap();
     a.runtime.sync_tick().unwrap();
     b.runtime.sync_tick().unwrap();
 
+    // Trust is durable, so the restarted node does not need re-enrolling —
+    // only reconnecting.
     let b = restart(&network, b);
     network.connect(&a.node_id, &b.node_id);
     settle(&[&a, &b]);
@@ -356,8 +370,7 @@ fn repeated_synchronisation_changes_nothing() {
     let b = spawn(&network);
 
     a.runtime.create_incident(incident("sync me", "LOW")).unwrap();
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     let before = b.event_count();
 
@@ -379,8 +392,7 @@ fn duplicate_delivery_of_the_same_batch_is_idempotent() {
     let b = spawn(&network);
 
     a.runtime.create_incident(incident("delivered twice", "LOW")).unwrap();
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     // Replay A's whole log at B, several times over.
     let events = a.runtime.database().events_since(&a.node_id, 0, 100).unwrap();
@@ -421,6 +433,10 @@ fn out_of_order_arrival_still_converges() {
     for n in 0..5 {
         a.runtime.create_incident(incident(&format!("ordered {n}"), "LOW")).unwrap();
     }
+
+    // Enroll first: this test is about ordering, so A has to be authorized or
+    // the batches would be refused before ordering ever came into it.
+    connect_and_enroll(&network, &a, &b);
 
     let identity =
         NodeIdentity::load_or_create(&FileKeyStore::new(a.dir.path().join(KEYSTORE_FILE))).unwrap();
@@ -467,7 +483,9 @@ fn a_message_signed_by_someone_other_than_the_sender_is_refused() {
     let b = spawn(&network);
     let impostor = spawn(&network);
 
-    network.connect(&a.node_id, &b.node_id);
+    // A and B are properly enrolled, so the rejection below is attributable to
+    // the sender mismatch rather than to either of them being unauthorized.
+    connect_and_enroll(&network, &a, &b);
     settle(&[&a, &b, &impostor]);
 
     // The impostor signs a batch but it is delivered as though it came from A.
@@ -515,6 +533,14 @@ fn a_tampered_event_inside_a_valid_envelope_is_refused() {
     let b = spawn(&network);
 
     a.runtime.create_incident(incident("genuine", "LOW")).unwrap();
+
+    // A is fully authorized, so the rejection below is attributable to the
+    // tampering rather than to a missing enrollment. Authorization does not
+    // make a peer's payloads trustworthy — each event is still verified
+    // against its author's key.
+    connect_and_enroll(&network, &a, &b);
+    let baseline = b.event_count();
+
     let mut events = a.runtime.database().events_since(&a.node_id, 0, 10).unwrap();
     events[0].payload = events[0].payload.replace("genuine", "tampered");
 
@@ -541,7 +567,7 @@ fn a_tampered_event_inside_a_valid_envelope_is_refused() {
     let report = b.runtime.sync_tick().unwrap();
     assert_eq!(report.events_rejected, 1);
     assert_eq!(report.events_applied, 0);
-    assert_eq!(b.event_count(), 0);
+    assert_eq!(b.event_count(), baseline, "the tampered event was not stored");
 }
 
 #[test]
@@ -599,8 +625,7 @@ fn a_flood_of_malformed_messages_does_not_disturb_the_node() {
 
     // Legitimate traffic still works immediately afterwards.
     a.runtime.create_incident(incident("after the flood", "LOW")).unwrap();
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
     assert_eq!(b.incidents(), vec!["after the flood".to_string()]);
 }
 
@@ -611,8 +636,7 @@ fn equivocation_by_a_peer_is_detected_and_nothing_is_overwritten() {
     let b = spawn(&network);
 
     a.runtime.create_incident(incident("the real event", "LOW")).unwrap();
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
     assert_eq!(b.incidents(), vec!["the real event".to_string()]);
 
     // A forks its own log: a second, different event at sequence 1.
@@ -668,9 +692,10 @@ fn events_relay_through_an_intermediate_node() {
     let b = spawn(&network);
     let c = spawn(&network);
 
-    // A and C never meet. B is the only path between them.
-    network.connect(&a.node_id, &b.node_id);
-    network.connect(&b.node_id, &c.node_id);
+    // A and C never meet. B is the only path between them, and B enrolls with
+    // each of them separately — trust is pairwise and is never delegated.
+    connect_and_enroll(&network, &a, &b);
+    connect_and_enroll(&network, &b, &c);
 
     a.runtime.create_incident(incident("originated at A", "HIGH")).unwrap();
     settle(&[&a, &b, &c]);
@@ -698,9 +723,8 @@ fn a_three_node_mesh_converges_from_a_full_partition() {
     b.runtime.create_incident(incident("INC-B", "LOW")).unwrap();
     c.runtime.create_incident(incident("INC-C", "LOW")).unwrap();
 
-    network.connect(&a.node_id, &b.node_id);
-    network.connect(&b.node_id, &c.node_id);
-    settle(&[&a, &b, &c]);
+    connect_and_enroll(&network, &a, &b);
+    connect_and_enroll(&network, &b, &c);
     for node in [&a, &b, &c] {
         node.runtime.request_sync().unwrap();
     }
@@ -724,8 +748,7 @@ fn peer_state_reflects_connection_and_disconnection() {
 
     assert!(a.runtime.list_peers().unwrap().is_empty());
 
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     let peers = a.runtime.list_peers().unwrap();
     assert_eq!(peers.len(), 1);
@@ -757,8 +780,7 @@ fn a_synchronised_incident_stops_being_pending() {
     assert_eq!(created.sync_status, SyncStatus::Pending);
     assert_eq!(a.runtime.network_status().unwrap().pending_sync, 1);
 
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     assert_eq!(
         a.runtime.get_incident(&created.id).unwrap().sync_status,
@@ -773,8 +795,7 @@ fn pending_counts_survive_a_restart() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
 
     a.runtime.create_incident(incident("queued for B", "LOW")).unwrap();
     assert_eq!(
@@ -796,8 +817,7 @@ fn a_restarted_node_does_not_report_stale_peers_as_connected() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    network.connect(&a.node_id, &b.node_id);
-    settle(&[&a, &b]);
+    connect_and_enroll(&network, &a, &b);
     assert!(a.runtime.network_status().unwrap().online);
 
     // Restart without reconnecting: no session survives a process exit.
