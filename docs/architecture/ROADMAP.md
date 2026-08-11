@@ -69,17 +69,44 @@ environment than real Wi-Fi.
 
 ---
 
-## Phase 2.5 — Mesh hardening 📋 NEXT
+## Phase 2.5 — Peer trust and enrollment ✅ COMPLETE
 
-Carried over from Phase 2, and required before the mesh is fit for a contested
-network.
+**Goal:** a node on the network is not a node in the deployment.
+
+| Item | Status |
+|---|---|
+| Persistent trust store in SQLite (`UNKNOWN`/`PENDING`/`TRUSTED`/`REVOKED`) | ✅ |
+| Offline enrollment — no server, no CA, no Internet | ✅ |
+| Authorization bound to `node_id = SHA-256(public key)` | ✅ |
+| Enforced in the Rust core, not the UI | ✅ |
+| Unknown, pending and revoked peers cannot synchronise | ✅ |
+| Revocation durable across restart, reconnect and re-announcement | ✅ |
+| Minimal capability model; ordinary nodes cannot enroll or revoke | ✅ |
+| Signed, append-only trust audit log with monotonic ordering | ✅ |
+| Bootstrap authority documented | ✅ `SECURITY.md` §5.14 |
+| 26 security tests; 284 total; clippy clean | ✅ |
+| Replicated revocation across the mesh | ❌ **deferred — §6.13** |
+| Out-of-band identity verification aid | ❌ deferred — §6.15 |
+
+**Key design decision.** Trust is **local policy**, in the manner of SSH's
+`authorized_keys` rather than a certificate authority. Each node's store records
+what *that node* accepts. Making decisions propagate would mean one node's
+policy binding another's — a PKI, with issuance, chains, delegation and a
+compromised-authority failure mode far worse than the limitation it removes.
+
+The cost is stated plainly rather than hidden: **revocation does not
+propagate**, and a partitioned node cannot learn of one until something reaches
+it.
+
+## Phase 2.75 — Mesh hardening 📋 NEXT
 
 | Item | Notes |
 |---|---|
-| **Out-of-band peer enrolment and revocation** | 🔍 Mechanism not chosen. Authentication proves a peer holds its key; it does not prove the peer belongs. `SECURITY.md` §6.6 |
+| **Replicated, administrator-signed revocation** | 🔍 With explicit conflict states when administrators disagree. `SECURITY.md` §6.13 |
+| Out-of-band identity verification (QR / roster) | 🔍 So an operator can confirm *which* node they are approving. §6.15 |
 | Per-peer rate limiting and quotas | §6.10 |
-| Durable, append-only, signed audit log | §6.4 |
-| Two-laptop test on an isolated physical network | The one Phase 2 claim not yet demonstrated on real hardware |
+| Durable audit log for non-trust events | §6.4 |
+| Two-laptop test on an isolated physical network | The one claim not yet demonstrated on separate hardware |
 
 ## Phase 3 — Local inference 📋
 

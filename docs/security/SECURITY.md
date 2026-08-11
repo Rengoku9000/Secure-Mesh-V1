@@ -1,7 +1,28 @@
 # SecureMesh — Security Model
 
-**Status: Phase 2 (local node + peer-to-peer mesh). This document describes what
-SecureMesh protects *today*, not what it is intended to protect eventually.**
+**Status: Phase 2.5 (local node + authorized peer-to-peer mesh). This document
+describes what SecureMesh protects *today*, not what it is intended to protect
+eventually.**
+
+## 0. The seven properties, kept apart
+
+These are routinely conflated, and conflating them is how systems end up
+trusting anyone who can complete a handshake.
+
+| # | Property | Question it answers | Mechanism | Status |
+|---|---|---|---|---|
+| 1 | **Identity authentication** | "Are you who you claim to be?" | Ed25519 key possession proved by the QUIC/TLS 1.3 handshake; `node_id = SHA-256(public key)` | ✅ Implemented |
+| 2 | **Peer authorization** | "Are you allowed here?" | Persisted per-peer trust state, granted only by an explicit local operator decision | ✅ Implemented (Phase 2.5) |
+| 3 | **Transport encryption** | "Can anyone else read this in flight?" | QUIC / TLS 1.3, **hop-by-hop** | ✅ Implemented, §6.7 |
+| 4 | **Event authenticity** | "Who wrote this record?" | Per-event Ed25519 signature by its author, verifiable standalone | ✅ Implemented |
+| 5 | **Data integrity** | "Has this been altered?" | Signatures + content hashes; equivocation detected and preserved | ✅ Implemented |
+| 6 | **Confidentiality at rest** | "Can someone reading the disk see it?" | — | ❌ **Not implemented**, §6.2 |
+| 7 | **Revocation** | "Can access be withdrawn?" | Durable REVOKED state, enforced on every message | ⚠️ Local only — **does not propagate**, §6.13 |
+
+**1 and 2 are the pair that matters most.** Authentication proves a peer holds
+a key. Anyone can generate a key, so on its own that grants nothing.
+Authorization is a separate, explicit, persisted decision. Phase 2 had only the
+first; Phase 2.5 adds the second.
 
 The distinction matters. A security document that describes aspirations as
 though they were controls is worse than no document at all, because it causes
@@ -84,19 +105,49 @@ every command response and asserts the private key is absent.
 **Boundary 2 — process ↔ filesystem.** Discussed in §6.1 and §6.2.
 
 **Boundary 3 — the mesh.** Everything arriving from a peer is hostile until
-proven otherwise. Two independent checks apply, and both must pass:
+proven otherwise. Three independent checks apply, and all must pass:
 
-1. **The session.** QUIC's TLS 1.3 handshake proves the peer holds the private
-   key behind its libp2p `PeerId`. Because that key *is* the node's SecureMesh
-   identity key, the session proves the peer is the node it claims to be.
-2. **The record.** Every replicated event carries its own author signature and
-   its author's public key, bound by `node_id = SHA-256(public key)`. An event
-   is verified against **its author's** key, never the key of the peer that
-   delivered it.
+1. **The session** *(authentication)*. QUIC's TLS 1.3 handshake proves the peer
+   holds the private key behind its libp2p `PeerId`. Because that key *is* the
+   node's SecureMesh identity key, the session proves the peer is the node it
+   claims to be.
+2. **The trust store** *(authorization)*. The peer's `node_id` must be
+   `TRUSTED` locally. Read fresh from SQLite on **every message**, so a
+   revocation takes effect on the next message rather than the next
+   reconnection. A peer that is merely authenticated gets nothing.
+3. **The record** *(authenticity)*. Every replicated event carries its own
+   author signature and its author's public key, bound by
+   `node_id = SHA-256(public key)`. An event is verified against **its
+   author's** key, never the key of the peer that delivered it.
 
-The second check is what makes relaying safe: B forwarding A's event does not
-require C to trust B, only to check A's signature. A relay can withhold or
-reorder, but it cannot forge or alter.
+Check 3 is what makes relaying safe: B forwarding A's event does not require C
+to trust B, only to check A's signature. A relay can withhold or reorder, but
+it cannot forge or alter.
+
+Check 2 is new in Phase 2.5 and is what stops step 1 from being mistaken for
+permission.
+
+```text
+  peer message
+       │
+       ▼
+  authenticated session?  ── no ──▶ never delivered (transport refuses)
+       │ yes
+       ▼
+  envelope signature matches the authenticated peer? ── no ──▶ rejected
+       │ yes
+       ▼
+  handshake / liveness message?  ── yes ──▶ allowed at any trust state
+       │ no  (operational message)
+       ▼
+  trust_state == TRUSTED?  ── no ──▶ REFUSED + audited
+       │ yes
+       ▼
+  role grants the capability?  ── no ──▶ REFUSED + audited
+       │ yes
+       ▼
+  each event verified against its own author's key
+```
 
 ---
 
@@ -120,10 +171,30 @@ Phase 1 assumes:
 
 Assumptions 1–4 are all weakened deliberately by later phases; see §8.
 
-### Out of scope for Phase 1
+### Out of scope
 
 Denial of service, physical tamper-evidence, side-channel resistance, supply
 chain attestation of the build, and protection against a malicious operator.
+
+### 4.1 Adversary scenarios
+
+What actually happens, case by case. "Mitigated" means tested, not intended.
+
+| Scenario | Outcome | Status |
+|---|---|---|
+| **Malicious node on the local network** joins and speaks the protocol | Authenticates, reaches `PENDING`, receives nothing. Cannot self-approve — no protocol message grants authorization | ✅ Mitigated |
+| **Spoofed identity** — a node claims another's node ID | Refused at two independent points: `node_id` must equal `SHA-256` of the key the handshake proved, and the envelope signature must match the authenticated peer | ✅ Mitigated |
+| **Revoked device reconnects** | Stays `REVOKED` across reconnects, restarts, and re-announcements. It is never re-offered as a fresh enrolment candidate | ✅ Mitigated |
+| **Revoked device with a fresh keypair** | A different `node_id`, so it appears as a new `UNKNOWN` node needing its own decision. It inherits nothing — but note it is also *not automatically denied*: the operator must recognise it. See §6.15 | ⚠️ Partial |
+| **Replayed enrolment request** | Idempotent. Repeats neither create duplicate audit entries nor change state, and cannot lift a `REVOKED` peer | ✅ Mitigated |
+| **Malformed enrolment / trust input** | Rejected without panicking; empty, non-hex, oversized, path-like and SQL-metacharacter identifiers all covered by tests | ✅ Mitigated |
+| **Peer announces itself as an administrator** | Ignored. Roles are local and never taken from the wire; announced capabilities are informational only | ✅ Mitigated |
+| **Peer renames itself or moves address** to escape a denial | No effect. Authorization is keyed by the public key fingerprint | ✅ Mitigated |
+| **Compromised *trusted* node** | Can inject records of its own authorship and read everything replicated to it. It cannot forge another node's records or alter what it relays. Containment is manual revocation, which does not propagate (§6.13) | ⚠️ Partial |
+| **Stolen device** | Holder gets the private key (unencrypted at rest, §6.1) and all local data (§6.2). Other operators must revoke it on each of their nodes; nothing is automatic | ⚠️ Partial |
+| **Network partition during revocation** | A disconnected node keeps treating the peer as trusted until its own operator acts. **Inherent to offline-first** and stated plainly rather than papered over | ⚠️ Accepted, §6.13 |
+| **Compromised administrator key** | **Not solved.** No key rotation, no revocation of an administrator, no recovery path | ❌ Not addressed |
+| **Relay reads what it forwards** | True. Transport encryption is hop-by-hop, not end-to-end. The relay cannot alter or forge, only read and withhold | ⚠️ Accepted, §6.7 |
 
 ---
 
@@ -239,6 +310,62 @@ domain-separated by a distinct, length-prefixed prefix:
 Length-prefixing every field additionally prevents field-boundary confusion, so
 one signature cannot be reinterpreted as covering a different message.
 
+### 5.12 Peer authorization
+
+Every peer carries a persisted trust state, keyed by
+`node_id = SHA-256(public key)`:
+
+| State | Reached by | Permits |
+|---|---|---|
+| `UNKNOWN` | Default for any node encountered, including one learned only as the origin of a relayed event | nothing |
+| `PENDING` | The peer presented itself (sent `HELLO`) | nothing |
+| `TRUSTED` | **An explicit local operator decision** | synchronisation, per capability |
+| `REVOKED` | An operator rejected or revoked it | nothing |
+
+Properties that are enforced, not merely intended:
+
+- **No protocol message grants authorization.** There is no wire message that
+  moves a peer to `TRUSTED`. Decisions enter only through local commands, so an
+  enrolled peer cannot promote itself or anyone else. `HELLO` can move a peer
+  from `UNKNOWN` to `PENDING` and nothing further.
+- **Ordinary nodes hold no administrative capability.** `PeerRole::Node` does
+  not grant `PEER_ENROLL` or `PEER_REVOKE`, and capabilities are derived from
+  the role rather than stored per node, so a stored list cannot drift.
+- **Authorization is re-read on every message.** A revocation takes effect on
+  the next message, not the next reconnection.
+- **Revocation preserves the record.** Deleting the peer would return it to
+  `UNKNOWN`, and the next handshake would offer it as a fresh enrolment
+  candidate — making revocation a temporary inconvenience.
+- **Enrolment is bound to the key.** A peer that changes its display name, IP
+  address, or transport peer ID keeps exactly the authorization it had. A peer
+  that changes its *keypair* is a different node ID needing its own decision.
+- **The database enforces it too.** `peer_trust_events.node_id` is a foreign key
+  into `nodes`, so a decision cannot be recorded about an identity this device
+  holds no public key for.
+
+### 5.13 Trust audit trail
+
+Every decision writes an append-only entry to `peer_trust_events` in the same
+transaction as the state change, so a decision cannot take effect without a
+record or be recorded without taking effect. Each entry carries the peer, the
+transition, the deciding node, an optional operator note, and an Ed25519
+signature over its canonical encoding (domain `securemesh-trust-v1:`, distinct
+from the event and envelope domains). Entries are ordered by a **local
+monotonic sequence**, not by wall-clock time.
+
+Audited events: `peer.enrollment.requested`, `peer.enrollment.approved`,
+`peer.enrollment.rejected`, `peer.revoked`, `peer.reinstated`. Refused attempts
+to use authority the node does not hold are audited as
+`authorization.denied`.
+
+### 5.14 Bootstrap of authority
+
+On first launch the local node records itself as `TRUSTED` with role `ADMIN` in
+its own trust store. This is not a claim of authority over any other node: it
+records that **the operator of this device decides what this device accepts**,
+which is true whether or not it is written down. There is no issuer, no
+certificate chain, and no delegation. See §6.14 for what this does not do.
+
 ### 5.9 Hostile input from the network
 
 All of the following are tested (`tests/mesh_sync.rs`, `networking::protocol`):
@@ -337,25 +464,16 @@ log, and a local attacker who can write to the SQLite file can still alter that
 projection. The log itself remains authoritative and tamper-evident, so such an
 alteration is detectable by re-deriving the projection from the events.
 
-### 6.6 There is no peer enrolment — **most significant Phase 2 limitation**
+### 6.6 ~~There is no peer enrolment~~ — CLOSED in Phase 2.5
 
-Any node on the local network that speaks the protocol can connect, authenticate
-with a self-generated identity, and have its events accepted.
+A peer must now be explicitly approved by a local operator before anything is
+exchanged with it. Authentication no longer implies participation. See §5.12.
 
-Authentication proves a peer *holds the key it claims*. It does **not** prove
-the peer is authorised to participate. There is no allowlist, no invitation, no
-operator approval step, and no revocation. On an untrusted network, a hostile
-node can join the mesh and inject signed records of its own authorship.
-
-What this does still guarantee: an attacker cannot forge records attributed to
-*another* node, cannot alter records in transit, and cannot read traffic between
-two other peers. The exposure is that its own fabricated records are accepted,
-and that it can read what is replicated to it.
-
-Trust-on-first-use is not sufficient for the target deployments. An out-of-band
-enrolment step — a QR code, a pre-shared roster, or explicit operator
-confirmation — is required before this is fit for a contested environment, and
-the mechanism has not yet been chosen.
+Residual limits, all covered below: the decision is **local only** and does not
+propagate (§6.13); administrative authority on a device the operator physically
+holds is a **policy** control, not a cryptographic one (§6.14); and there is no
+enrolment channel that resists an operator being deceived about *which* node
+they are approving (§6.15).
 
 ### 6.7 Transport encryption is hop-by-hop, not end-to-end
 
@@ -396,6 +514,60 @@ Message and batch sizes are bounded, but there is no per-peer rate limit and no
 quota. A connected peer can occupy the sync loop with a high volume of valid
 traffic. Denial of service remains explicitly out of scope (§4).
 
+### 6.13 Revocation does not propagate — **most significant Phase 2.5 limitation**
+
+A trust decision is **local**. Revoking a peer on node A stops *A* replicating
+with it. It does not revoke that peer anywhere else. Every node's operator must
+revoke independently.
+
+This is unavoidable in an offline-first system and is stated rather than
+disguised: **a disconnected node cannot learn about a revocation until something
+reaches it.** A node that was partitioned when a peer was revoked keeps treating
+that peer as trusted until its own operator acts.
+
+The model is SSH's `authorized_keys`, not a certificate authority. Making
+revocation propagate would mean one node's policy binding another's — a public
+key infrastructure, with issuance, chains, delegation, and its own much worse
+failure modes, including a compromised authority revoking everyone.
+
+**Designed path forward**, not implemented: replicate signed trust decisions as
+first-class events and accept them only from nodes the receiver already treats
+as administrators, with explicit conflict states when two administrators
+disagree. Until then, safe reconciliation means an operator revoking on each
+node that matters.
+
+### 6.14 Administrative authority is policy, not cryptography
+
+`set_local_role` can provision a node as `NODE`, removing its ability to enroll
+or revoke. On hardware the operator physically controls this is a **policy**
+control: someone with filesystem access can edit the SQLite row and restore
+`ADMIN`.
+
+It is defence in depth and a deployment aid, not a barrier against the device's
+own holder. A cryptographic version needs hardware-backed provisioning — a role
+attested by a key the operator cannot extract — which is Phase 5 work and
+depends on §6.9.
+
+### 6.15 Enrolment relies on the operator identifying the right peer
+
+The system guarantees that approving node `SM-A7F32` authorizes exactly the
+holder of that keypair. It cannot guarantee the operator meant to approve *that*
+node.
+
+Peers are presented by node name and node ID, both derived from the public key,
+so a hostile node cannot impersonate an existing peer's identifier. But an
+operator faced with an unfamiliar node ID has no in-band way to confirm it
+belongs to the device they intend to enroll. Out-of-band verification — reading
+the node ID off the other device, a QR code, a pre-shared roster — is required
+and is **not** provided by the software.
+
+### 6.16 A trusted peer is trusted for everything in scope
+
+Capabilities are coarse: a `TRUSTED` node with `INCIDENT_SYNC` receives the
+whole replicated log. There is no per-incident, per-origin, or
+classification-based filtering. Enrolling a peer means sharing everything the
+node holds and will hold.
+
 ### 6.11 No protection against a compromised host
 
 SecureMesh is an ordinary user-space process. It has no memory protection
@@ -432,6 +604,16 @@ To avoid the category errors that are common in this space:
   network can join (§6.6).
 - **Phase 2 is not confidential computing.** Nothing here changes §7's position
   on TEEs.
+- **This is not a PKI.** There is no certificate authority, no issuance, no
+  chain of trust, and no delegation. Trust decisions are local policy, in the
+  manner of SSH `authorized_keys` (§5.12, §6.13).
+- **Revocation does not propagate.** Revoking a peer on one node revokes it
+  there and nowhere else (§6.13).
+- **A compromised administrator key is not solved.** There is no key rotation,
+  no administrator revocation, and no recovery path.
+- **Enrolment does not verify intent.** Approving a node ID authorizes exactly
+  that keypair; whether it is the device the operator meant is out-of-band
+  (§6.15).
 
 ---
 
@@ -443,9 +625,13 @@ Ordered by the phase that introduces it. None of this is implemented.
 |-------|------|-----------|
 | ~~2~~ | ~~Sign every record; verify on receipt~~ — **done** | §6.5 |
 | ~~2~~ | ~~Mutually authenticated peer sessions over QUIC~~ — **done** | Boundary 3 |
-| 3 | Out-of-band peer enrolment and revocation | **§6.6** |
+| ~~2.5~~ | ~~Out-of-band peer enrolment and revocation~~ — **done** | §6.6 |
+| ~~2.5~~ | ~~Signed, append-only trust audit log~~ — **done** | §5.13 |
+| 3 | Out-of-band identity verification aid (QR code / roster) so an operator can confirm *which* node they approve | §6.15 |
+| 3 | Replicated, administrator-signed revocation with explicit conflict states | **§6.13** |
 | 3 | Per-peer rate limiting and quotas | §6.10 |
-| 3 | Durable, append-only, signed audit log | §6.4 |
+| 3 | Durable, append-only, signed audit log for non-trust events | §6.4 |
+| 5 | Hardware-attested node roles, so administrative authority is cryptographic | §6.14 |
 | 4+ | End-to-end encryption for multi-hop paths, if the threat model requires it | §6.7 |
 | 3 | Model integrity verification before loading any local model | New asset |
 | 5 | TPM 2.0 / secure element `KeyStore` backend: key sealed to platform state, signing performed in hardware so the private key never enters process memory. **Requires resolving the transport-key tension in §6.9.** | §6.1, §6.9, §6.11 |

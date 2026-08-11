@@ -9,13 +9,14 @@ Blockchain & Cybersecurity
 > communicate, store, synchronise and locally process information without
 > depending on external cloud services.
 
-**Current status: Phase 2 complete.** Nodes hold cryptographic identities,
+**Current status: Phase 2.5 complete.** Nodes hold cryptographic identities,
 persist an append-only signed event log, discover each other on a local network
 with no server, authenticate over encrypted QUIC, and replicate incidents —
 converging correctly across partitions, restarts, duplicate delivery and
-out-of-order arrival. Local AI and confidential computing are designed but
-**not implemented** — see [Roadmap](#roadmap) and
-[Current limitations](#current-limitations).
+out-of-order arrival. A peer must be **explicitly enrolled by an operator**
+before anything is exchanged with it; authentication alone grants nothing. Local
+AI and confidential computing are designed but **not implemented** — see
+[Roadmap](#roadmap) and [Current limitations](#current-limitations).
 
 ---
 
@@ -40,7 +41,7 @@ SecureMesh nodes are independent by construction. Each one:
 1. Holds its own cryptographic identity ✅
 2. Stores its own operational data locally ✅
 3. Communicates directly with nearby nodes ✅
-4. Synchronises without a coordinating server ✅
+4. Synchronises without a coordinating server ✅ — **only with enrolled peers** ✅
 5. Runs AI inference on-device *(Phase 3)*
 6. Answers questions from local documents *(Phase 4)*
 7. Protects keys and processing in hardware *(Phase 5)*
@@ -161,7 +162,7 @@ The first build compiles the Rust core and takes several minutes.
 
 ```bash
 cd src-tauri
-cargo test            # 218 tests: 181 unit + 37 integration
+cargo test            # 284 tests: 221 unit + 63 integration
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
@@ -182,8 +183,10 @@ $env:SECUREMESH_DATA_DIR="$env:TEMP\smA"; Start-Process .\dist-app\securemesh.ex
 $env:SECUREMESH_DATA_DIR="$env:TEMP\smB"; Start-Process .\dist-app\securemesh.exe
 ```
 
-They discover each other automatically. Create an incident in one window and it
-appears in the other.
+They discover each other automatically — and then **nothing happens**, which is
+correct. Each window shows the other as `PENDING` in the Peers panel. Click
+**Approve** on both, and only then does an incident created in one appear in the
+other.
 
 > **Do not launch `src-tauri/target/debug/securemesh.exe` directly.** That path
 > is rewritten by every `cargo build`, `cargo test` and `cargo clippy` into a
@@ -231,6 +234,23 @@ Deleting the directory resets the node to a first launch.
 - Validates all input in Rust, never in the frontend
 - Light and dark themes from one token set
 
+**Phase 2.5 — the trust layer**
+
+- Distinguishes **authentication** ("are you who you claim?") from
+  **authorization** ("are you allowed here?") — a peer that completes the
+  handshake is `PENDING`, not trusted
+- Persists a per-peer trust state (`UNKNOWN` → `PENDING` → `TRUSTED` →
+  `REVOKED`) in SQLite, keyed by the public key fingerprint
+- Enforces it in the Rust core on every message, not in the UI — a frontend
+  that ignored the state would still be refused
+- **No protocol message can grant authorization.** Decisions come only from
+  local operator commands, so an enrolled peer cannot promote itself or anyone
+  else, and ordinary nodes hold no enroll/revoke capability at all
+- Revocation is durable and takes effect on the next message, not the next
+  reconnection; a revoked peer stays revoked across reconnects and restarts
+- Records every decision in an append-only, signed audit log ordered by a local
+  monotonic sequence
+
 **Phase 2 — the mesh**
 
 - Discovers peers on the local network by mDNS, with no server and no bootstrap
@@ -253,7 +273,11 @@ Stated plainly, because a reader needs them to judge what this is fit for.
 
 | Limitation | Detail |
 |---|---|
-| **No peer enrolment** | Authentication proves a peer holds its claimed key; it does **not** prove the peer is authorised. Any node on the network can join and inject records of its own authorship. The most significant Phase 2 weakness. `SECURITY.md` §6.6 |
+| **Revocation does not propagate** | A trust decision is local. Revoking a peer on one node does not revoke it elsewhere, and a partitioned node cannot learn of a revocation until something reaches it. Inherent to offline-first; the most significant Phase 2.5 weakness. `SECURITY.md` §6.13 |
+| **Not a PKI** | No certificate authority, no chain, no delegation. Trust is local policy, in the manner of SSH `authorized_keys` |
+| **A compromised administrator key is not solved** | No key rotation, no administrator revocation, no recovery path |
+| **Enrolment does not verify intent** | Approving a node ID authorizes exactly that keypair. Confirming it is the device you meant requires out-of-band checking the software does not provide. §6.15 |
+| **Administrative authority is policy, not cryptography** | A node can be provisioned as non-admin, but someone with filesystem access can edit that back. §6.14 |
 | **The private key is stored unencrypted at rest** | Protected by OS file permissions only. §6.1 |
 | **Not end-to-end encrypted** | QUIC protects each hop. A relay node reads the plaintext it forwards — it cannot forge or alter it, but it can read it. §6.7 |
 | Incident data is not encrypted at rest | Standard SQLite file. §6.2 |
@@ -277,6 +301,7 @@ Full analysis: [`docs/security/SECURITY.md`](docs/security/SECURITY.md).
 |---|---|---|
 | **1** | Node foundation: identity, storage, incidents, dashboard | ✅ **Complete** |
 | **2** | P2P mesh: libp2p, QUIC, authenticated peers, signed events, offline sync | ✅ **Complete** |
+| **2.5** | Peer trust: enrollment, authorization, capabilities, revocation, audit | ✅ **Complete** |
 | **3** | Local inference: classification, extraction, summarisation | 📋 Designed |
 | **4** | Local RAG: embeddings, vector index, grounded answers | 📋 Designed |
 | **5** | Confidential computing: TPM-backed keys, encrypted storage, TEE | 🔍 Research |

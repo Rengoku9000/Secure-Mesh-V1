@@ -67,17 +67,63 @@ command response and asserts the key is absent.
 
 ---
 
-## 1b. The two nodes find each other (90 s) — **the centrepiece**
+## 1b. The two nodes find each other — and refuse to talk (2 min) — **the centrepiece**
 
-Look at the **Network** panel in either window. Within a few seconds each node
-lists the other: node name, `CONNECTED`, last seen, and `Synced`.
+Look at the **Peers** panel in either window. Within a few seconds each node
+lists the other: node name, `CONNECTED` — and `PENDING`, with a banner saying
+*"1 peer awaiting enrollment."*
 
-> "Neither of these was configured with the other's address. They found each
-> other by mDNS on the local link. There is no server in this demo — not for
-> discovery, not for identity, not for relaying. If I unplug the network they
-> both keep working; they just stop seeing each other."
+> "Neither was configured with the other's address. They found each other by
+> mDNS on the local link — no server, for discovery or anything else."
 
-**Then the part that matters:** create an incident in window A —
+**Now create an incident in window A. Watch window B.** Nothing arrives.
+
+> "They're connected. They've authenticated — each has cryptographically proved
+> it holds the private key behind its node ID. And they are exchanging *nothing*.
+>
+> That's the distinction this phase is about. Authentication answers 'are you
+> who you claim to be'. Anyone can generate a keypair, so on its own that
+> answers nothing useful. Authorization is a separate question — 'are you
+> allowed here' — and it needs a human decision."
+
+Click **Approve** in window A, then in window B. The incident appears in B
+within a couple of seconds, and both peers now read `TRUSTED` · `Synced`.
+
+**Worth stressing:** there is no protocol message that grants authorization.
+
+> "Node B cannot approve itself. There is no message it can send that moves it
+> to TRUSTED — the decision only enters through a local command on this device.
+> That's what stops an enrolled peer promoting itself, or anyone else."
+
+### Revocation
+
+In window A, click **Revoke** on peer B. Then create another incident in A.
+
+It does not reach B. B still shows as `CONNECTED` — the session is open; the
+authorization is not.
+
+> "Revocation takes effect on the next message, not the next reconnection. And
+> we keep the peer record rather than deleting it — deleting would send the node
+> back to UNKNOWN, and the next handshake would offer it as a fresh enrollment
+> candidate. That would make revocation a temporary inconvenience."
+
+**Close both windows and reopen them.** B is still `REVOKED`.
+
+**Be straight about the limitation if asked** — and it is the right question:
+
+> "That revocation is local to node A. It does not propagate. If there were a
+> node C on this mesh, C would still trust B until its own operator revoked it.
+> That's inherent to offline-first: a disconnected node can't learn about a
+> revocation until something reaches it. We chose SSH's authorized_keys model
+> over a certificate authority deliberately — making it propagate means one
+> node's policy binding another's, which is a PKI, and a compromised authority
+> then revokes everyone. It's documented as the top limitation of this phase."
+
+---
+
+## 1c. Replication, once authorized (60 s)
+
+**Create an incident in window A —**
 
 - **Description:** `Bridge on NH-48 collapsed, southbound lane impassable`
 - **Severity:** `HIGH`
@@ -121,7 +167,7 @@ Point at the five subsystem rows:
 |---|---|---|
 | Local database | ● Healthy | Real SQLite file, migrated |
 | Node identity | ● Active | Real Ed25519 keypair |
-| Network | ● Connected | Authenticated peers over encrypted QUIC |
+| Network | ● Connected | Authenticated **and enrolled** peers over encrypted QUIC |
 | Local AI | ○ Not installed | Phase 3 — no model on this node |
 | TEE | ○ Not available | Phase 5 — this is an ordinary OS process |
 
@@ -269,14 +315,29 @@ where the endpoints never meet.
 > SQL, validated input, no key exposure, and every event independently
 > verifiable.
 
-**"So anyone on the network can join?"** — *the sharpest question; answer it
-straight*
-> Yes, and that's the biggest gap in Phase 2. Authentication proves a peer holds
-> the key it claims. It does **not** prove the peer is authorised. There's no
-> enrolment, no allowlist, no revocation. A hostile node on the same network can
-> join and inject records of its own authorship. What it *can't* do is forge
-> records attributed to someone else, alter anything in transit, or read traffic
-> between two other peers. Enrolment is the next piece of work.
+**"So anyone on the network can join?"**
+> No — that was true in Phase 2 and it's what Phase 2.5 fixed. A node that
+> connects reaches PENDING and receives nothing until an operator approves it.
+> Authentication proves key possession; authorization is a separate, persisted,
+> human decision, enforced in the Rust core on every message.
+
+**"Could a malicious node approve itself?"**
+> No. There is no protocol message that changes trust state — decisions enter
+> only through local commands on the device. And an ordinary node holds no
+> enroll or revoke capability at all, so even a trusted peer can't promote
+> anyone.
+
+**"What if it comes back with a new keypair?"**
+> Then it's a different node ID and shows up as a new UNKNOWN peer needing its
+> own decision. It inherits nothing — but note it isn't automatically *denied*
+> either. The operator has to recognise that it shouldn't be approved, and we
+> don't yet give them an out-of-band way to confirm which physical device a node
+> ID belongs to. That's a documented gap.
+
+**"Is this a PKI?"**
+> No, and we don't claim it is. No certificate authority, no chain, no
+> delegation. It's closer to SSH's authorized_keys: each node records what it
+> accepts. That's why revocation doesn't propagate.
 
 **"Is this end-to-end encrypted?"**
 > No. QUIC protects each hop. On a multi-hop path the relay decrypts and
@@ -297,6 +358,8 @@ straight*
 - Do not call the TPM a TEE, or vice versa.
 - Do not say data is encrypted at rest. It is not.
 - **Do not say the mesh is end-to-end encrypted.** It is hop-by-hop.
-- **Do not imply peers are vetted.** They are authenticated, not authorised.
+- **Do not call this a PKI.** There is no certificate authority and no chain.
+- **Do not say revocation propagates.** It is local to each node.
+- **Do not claim a compromised administrator key is handled.** It is not.
 - Do not demonstrate with real operational or personal data. All demo data is
   synthetic.
