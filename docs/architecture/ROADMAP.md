@@ -98,6 +98,29 @@ The cost is stated plainly rather than hidden: **revocation does not
 propagate**, and a partitioned node cannot learn of one until something reaches
 it.
 
+## Phase 2.6 — Deterministic synchronisation ✅ COMPLETE
+
+**Goal:** replication is caused by events, not by a timer.
+
+| Item | Status |
+|---|---|
+| Original delayed-sync failure reproduced deterministically | ✅ 11 of 16 cases failed against the old engine |
+| Explicit per-peer lifecycle (`LinkState`) | ✅ |
+| A trigger for every legitimate cause, all funnelling into one path | ✅ |
+| Authorization transition starts sync immediately | ✅ |
+| Direction-independent: initiator, approver and data holder all irrelevant | ✅ |
+| Reconnect and restart resynchronise on their own | ✅ |
+| Multi-hop relay propagates without a sweep | ✅ |
+| Periodic sweep demoted to a 60 s safety net (was 5 s and load-bearing) | ✅ |
+| Structured `sync.*` logging with round latency | ✅ |
+| Batch-loss bug in `tick` fixed | ✅ |
+| 315 tests, clippy clean | ✅ |
+
+**Root cause.** Authorization had no trigger. Only a connection or a five-second
+timer ever opened a round, so approving an already-connected peer had no causal
+path to replication — the timer was doing work that nothing had asked it to do.
+See `docs/architecture/ARCHITECTURE.md` §5.4b.
+
 ## Phase 2.75 — Mesh hardening 📋 NEXT
 
 | Item | Notes |

@@ -44,6 +44,12 @@
 //! - **Authenticated end to end.** Each event is verified against its *origin's*
 //!   key, not the key of the peer that delivered it.
 
+pub mod link;
+pub mod observe;
+
+pub use link::{LinkSnapshot, LinkState, PeerLink, SyncTrigger};
+use observe::{observe, SyncLog};
+
 use crate::domain::trust::{Capability, TrustState};
 use crate::domain::MeshEvent as DomainEvent;
 use crate::error::{CoreError, CoreResult};
@@ -94,19 +100,36 @@ impl SyncReport {
     }
 }
 
+/// How often the reconciliation sweep runs.
+///
+/// **This is a safety net, not the mechanism.** Every legitimate cause of
+/// synchronisation has its own trigger (see [`SyncTrigger`]); the sweep exists
+/// only to recover from a message lost to a transport failure that produced no
+/// disconnection event. Phase 2.5 had this at five seconds and depended on it,
+/// which is why an approval could sit idle: the timer *was* the trigger.
+///
+/// It is deliberately slow. If correctness ever appears to depend on making it
+/// faster, a trigger is missing and shortening the interval would only hide
+/// that — the determinism tests in `tests/sync_determinism.rs` never run it at
+/// all.
+pub const RECONCILE_INTERVAL_SECS: u64 = 60;
+
 /// Reconciles the local event log with connected peers.
 pub struct SyncEngine<T: MeshTransport> {
     transport: T,
-    /// Live connection state. Deliberately in memory: it describes *now*, and a
-    /// stale "connected" row surviving a crash would be a lie.
-    connected: HashMap<String, PeerDescriptor>,
+    /// Live sessions and where each has reached in its lifecycle.
+    ///
+    /// Deliberately in memory: it describes *now*, and a stale "mid-sync" row
+    /// surviving a crash would be a lie. Everything durable is in the event log
+    /// and the trust store.
+    links: HashMap<String, PeerLink>,
 }
 
 impl<T: MeshTransport> SyncEngine<T> {
     pub fn new(transport: T) -> Self {
         Self {
             transport,
-            connected: HashMap::new(),
+            links: HashMap::new(),
         }
     }
 
@@ -116,7 +139,19 @@ impl<T: MeshTransport> SyncEngine<T> {
 
     /// Peers with an open authenticated session.
     pub fn connected_peers(&self) -> Vec<PeerDescriptor> {
-        self.connected.values().cloned().collect()
+        self.links
+            .values()
+            .map(|link| PeerDescriptor {
+                node_id: link.node_id.clone(),
+                public_key: link.public_key.clone(),
+                transport_peer_id: link.transport_peer_id.clone(),
+            })
+            .collect()
+    }
+
+    /// The lifecycle state of every live session, for diagnostics and the UI.
+    pub fn link_snapshots(&self) -> Vec<LinkSnapshot> {
+        self.links.values().map(LinkSnapshot::from).collect()
     }
 
     /// Processes everything the transport has delivered since the last tick.
@@ -131,16 +166,34 @@ impl<T: MeshTransport> SyncEngine<T> {
     ) -> CoreResult<SyncReport> {
         let mut report = SyncReport::default();
 
+        // `poll_events` drains the transport, so every event in this batch has
+        // already left the inbox. Failing out of the loop would discard the
+        // rest of them permanently — including, in the worst case, a
+        // `PeerConnected` whose loss leaves a peer connected but invisible to
+        // the engine. Each event is therefore handled independently and its
+        // failure recorded rather than propagated.
         for event in self.transport.poll_events() {
             match event {
                 MeshEvent::PeerConnected(peer) => {
                     report.peers_connected += 1;
-                    self.on_peer_connected(database, identity, peer)?;
+                    if let Err(error) = self.on_peer_connected(database, identity, peer) {
+                        observe(SyncLog::Failed {
+                            peer: "unknown",
+                            reason: error.message(),
+                        });
+                        report.messages_rejected += 1;
+                    }
                 }
                 MeshEvent::PeerDisconnected { node_id } => {
                     report.peers_disconnected += 1;
-                    self.connected.remove(&node_id);
-                    database.mark_node_offline(&node_id)?;
+                    self.links.remove(&node_id);
+                    observe(SyncLog::Disconnected { peer: &node_id });
+                    if let Err(error) = database.mark_node_offline(&node_id) {
+                        observe(SyncLog::Failed {
+                            peer: &node_id,
+                            reason: error.message(),
+                        });
+                    }
                 }
                 MeshEvent::MessageReceived { from, envelope } => {
                     match self.on_message(database, identity, &from, envelope) {
@@ -148,9 +201,13 @@ impl<T: MeshTransport> SyncEngine<T> {
                             report.merge(partial);
                             report.messages_processed += 1;
                         }
-                        Err(_) => {
+                        Err(error) => {
                             // A peer sending something unusable is a routine
                             // condition, not a reason to stop serving others.
+                            observe(SyncLog::Rejected {
+                                peer: &from.node_id,
+                                reason: error.message(),
+                            });
                             report.messages_rejected += 1;
                         }
                     }
@@ -158,7 +215,116 @@ impl<T: MeshTransport> SyncEngine<T> {
             }
         }
 
+        // **Trigger: this node's knowledge grew.**
+        //
+        // Events accepted from one peer may be missing at another, and a relay
+        // that stayed quiet about what it just learned would leave a multi-hop
+        // path stuck halfway. Opening a round with every peer is safe because a
+        // round carries only watermarks: a peer that is already up to date
+        // simply finds nothing to ask for.
+        //
+        // This terminates. A round is only productive while some peer is
+        // strictly behind, and every productive round closes that gap.
+        if report.events_applied > 0 {
+            self.open_rounds(database, identity, SyncTrigger::Relay)?;
+        }
+
         Ok(report)
+    }
+
+    /// Opens a round with one peer, if it is authorized and reachable.
+    ///
+    /// The single entry point for every trigger. Having exactly one means a new
+    /// cause of synchronisation cannot accidentally acquire its own slightly
+    /// different rules — which is how the Phase 2.5 gap arose, where connection
+    /// had a path and authorization did not.
+    fn open_round(
+        &mut self,
+        database: &Database,
+        identity: &NodeIdentity,
+        peer_node_id: &str,
+        trigger: SyncTrigger,
+    ) -> CoreResult<bool> {
+        let trust = database.trust_state_of(peer_node_id)?;
+
+        let Some(link) = self.links.get_mut(peer_node_id) else {
+            return Ok(false); // Not connected; the next connection will trigger.
+        };
+        link.apply_trust(trust);
+
+        if !link.begin_round(trigger) {
+            return Ok(false);
+        }
+
+        observe(SyncLog::Started {
+            peer: peer_node_id,
+            trigger,
+        });
+        self.request_sync(database, identity, peer_node_id)?;
+        Ok(true)
+    }
+
+    /// Opens a round with every connected peer that is authorized.
+    fn open_rounds(
+        &mut self,
+        database: &Database,
+        identity: &NodeIdentity,
+        trigger: SyncTrigger,
+    ) -> CoreResult<usize> {
+        let peers: Vec<String> = self.links.keys().cloned().collect();
+        let mut opened = 0;
+        for peer in peers {
+            if self.open_round(database, identity, &peer, trigger)? {
+                opened += 1;
+            }
+        }
+        Ok(opened)
+    }
+
+    /// **Trigger: this node authorized a peer.**
+    ///
+    /// Called by the runtime the moment an operator approves or reinstates, so
+    /// replication starts from the decision itself rather than from whenever
+    /// the next sweep happens to run.
+    pub fn on_authorization_changed(
+        &mut self,
+        database: &Database,
+        identity: &NodeIdentity,
+        peer_node_id: &str,
+    ) -> CoreResult<()> {
+        let trust = database.trust_state_of(peer_node_id)?;
+        if let Some(link) = self.links.get_mut(peer_node_id) {
+            link.apply_trust(trust);
+        }
+        observe(SyncLog::Authorization {
+            peer: peer_node_id,
+            state: trust,
+        });
+
+        if trust.permits_authorized_operations() {
+            self.open_round(database, identity, peer_node_id, SyncTrigger::LocalAuthorization)?;
+        }
+        Ok(())
+    }
+
+    /// **Trigger: a local event was appended.**
+    ///
+    /// Sync is pull-based, so this does not push the event. It opens a round,
+    /// which carries this node's watermarks; the peer sees it is behind and
+    /// asks. One mechanism, whichever side has the data.
+    pub fn on_local_event(
+        &mut self,
+        database: &Database,
+        identity: &NodeIdentity,
+    ) -> CoreResult<()> {
+        self.open_rounds(database, identity, SyncTrigger::LocalEvent)?;
+        Ok(())
+    }
+
+    /// **Trigger: the periodic safety net.** See [`RECONCILE_INTERVAL_SECS`].
+    pub fn reconcile(&mut self, database: &Database, identity: &NodeIdentity) -> CoreResult<()> {
+        self.open_rounds(database, identity, SyncTrigger::Reconciliation)?;
+        Ok(())
     }
 
     /// Registers a newly authenticated peer and opens a sync round.
@@ -186,14 +352,20 @@ impl<T: MeshTransport> SyncEngine<T> {
             &peer.public_key,
             Some(&peer.transport_peer_id),
         )?;
-        self.connected.insert(peer.node_id.clone(), peer.clone());
+
+        let node_id = peer.node_id.clone();
+        self.links.insert(
+            node_id.clone(),
+            PeerLink::new(peer.node_id, peer.public_key, peer.transport_peer_id),
+        );
+        observe(SyncLog::Connected { peer: &node_id });
 
         // The handshake is offered to every authenticated peer regardless of
         // trust, so an unenrolled node can present itself and an operator can
         // see it waiting. It carries no operational data.
         self.send(
             identity,
-            &peer.node_id,
+            &node_id,
             MessageBody::Hello {
                 protocol_version: crate::networking::protocol::PROTOCOL_VERSION,
                 node_name: identity.node_name().to_string(),
@@ -201,13 +373,16 @@ impl<T: MeshTransport> SyncEngine<T> {
             },
         )?;
 
-        // Sync is opened only toward an authorized peer. Asking an unenrolled
-        // node for its log would disclose which origins this node holds.
-        if database
-            .trust_state_of(&peer.node_id)?
-            .permits_authorized_operations()
-        {
-            self.request_sync(database, identity, &peer.node_id)?;
+        // **Trigger: connection.** Only toward an authorized peer — asking an
+        // unenrolled node for its log would disclose which origins this node
+        // holds. An unauthorized peer sits in AwaitingAuthorization until an
+        // operator acts, which is then its own trigger.
+        let trust = database.trust_state_of(&node_id)?;
+        if let Some(link) = self.links.get_mut(&node_id) {
+            link.apply_trust(trust);
+        }
+        if trust.permits_authorized_operations() {
+            self.open_round(database, identity, &node_id, SyncTrigger::Connected)?;
         }
         Ok(())
     }
@@ -257,8 +432,14 @@ impl<T: MeshTransport> SyncEngine<T> {
         identity: &NodeIdentity,
         peer_node_id: &str,
     ) -> CoreResult<()> {
-        let have = database
-            .sync_watermarks()?
+        let watermarks = database.sync_watermarks()?;
+        observe(SyncLog::LocalKnowledge {
+            peer: peer_node_id,
+            origins: watermarks.len(),
+            events: watermarks.iter().map(|(_, mark)| mark).sum(),
+        });
+
+        let have = watermarks
             .into_iter()
             .map(|(origin_node, watermark)| OriginWatermark {
                 origin_node,
@@ -311,6 +492,17 @@ impl<T: MeshTransport> SyncEngine<T> {
                     capabilities,
                 )?;
 
+                // The handshake completes here: version confirmed, identity
+                // confirmed, authorization folded in.
+                if let Some(link) = self.links.get_mut(&from.node_id) {
+                    link.authenticated(protocol_version, state);
+                }
+                observe(SyncLog::Authenticated {
+                    peer: &from.node_id,
+                    protocol_version,
+                    state,
+                });
+
                 self.send(
                     identity,
                     &from.node_id,
@@ -321,10 +513,12 @@ impl<T: MeshTransport> SyncEngine<T> {
                     },
                 )?;
 
-                // A peer approved while it was already connected gets its sync
-                // round here, without waiting for a reconnection.
+                // **Trigger: handshake completed on an authorized link.**
+                // Covers the case where this node received the connection
+                // rather than opening it, so neither side depends on having
+                // been the initiator.
                 if state.permits_authorized_operations() {
-                    self.request_sync(database, identity, &from.node_id)?;
+                    self.open_round(database, identity, &from.node_id, SyncTrigger::Connected)?;
                 }
             }
 
@@ -351,16 +545,32 @@ impl<T: MeshTransport> SyncEngine<T> {
                 // Advisory only: the batches carry the data. Nothing to do.
             }
 
-            MessageBody::EventBatch { origin_node, events, .. } => {
+            MessageBody::EventBatch { origin_node, events, complete } => {
                 Self::authorize(database, &from.node_id, Capability::IncidentSync)?;
-                report.merge(self.apply_batch(
+                let partial = self.apply_batch(
                     database,
                     identity,
                     from,
                     &origin_node,
                     events,
                     &envelope.message_id,
-                )?);
+                )?;
+
+                if let Some(link) = self.links.get_mut(&from.node_id) {
+                    link.events_received += partial.events_applied as u64;
+                    // The sender says it has nothing further for this origin,
+                    // so the round is done and its latency can be reported.
+                    if complete {
+                        if let Some(duration_ms) = link.complete_round() {
+                            observe(SyncLog::Completed {
+                                peer: &from.node_id,
+                                applied: partial.events_applied,
+                                duration_ms,
+                            });
+                        }
+                    }
+                }
+                report.merge(partial);
             }
 
             MessageBody::Ack { origin_node, accepted_through, .. } => {
@@ -382,7 +592,7 @@ impl<T: MeshTransport> SyncEngine<T> {
 
     /// Answers a peer's `SYNC_REQUEST` with what it lacks.
     fn serve_sync_request(
-        &self,
+        &mut self,
         database: &Database,
         identity: &NodeIdentity,
         peer_node_id: &str,
@@ -393,6 +603,10 @@ impl<T: MeshTransport> SyncEngine<T> {
             .into_iter()
             .map(|w| (w.origin_node, w.watermark))
             .collect();
+        observe(SyncLog::RemoteKnowledge {
+            peer: peer_node_id,
+            origins: peer_watermarks.len(),
+        });
 
         let local = database.sync_watermarks()?;
         let local_watermarks: HashMap<&String, u64> =
@@ -409,20 +623,26 @@ impl<T: MeshTransport> SyncEngine<T> {
             }
         }
 
-        // The request also tells us what the *peer* holds. If it is ahead of us
-        // on any origin, ask for that in return.
+        // **Trigger: the peer's knowledge is ahead of ours.**
         //
-        // Sync is pull-based, so without this a node that creates an event
-        // while a session is already open has no way to announce it — the peer
-        // would only discover it on the next reconnection. Reciprocating turns
-        // one request into a full bidirectional reconcile. It terminates
-        // because a counter-request is only sent while the peer is *strictly*
-        // ahead, and every round closes the gap.
+        // A request tells us what the *peer* holds as well as what it wants.
+        // Reciprocating turns any single request, from either direction, into a
+        // full bidirectional reconcile — which is what makes convergence
+        // independent of who opened the connection or who wrote the data.
+        //
+        // It terminates because a counter-request is only sent while the peer
+        // is *strictly* ahead, and every round closes the gap.
         let peer_is_ahead = peer_watermarks.iter().any(|(origin, peer_mark)| {
             *peer_mark > local_watermarks.get(origin).copied().unwrap_or(0)
         });
         if peer_is_ahead {
-            self.request_sync(database, identity, peer_node_id)?;
+            observe(SyncLog::PeerAhead { peer: peer_node_id });
+            // Routed through `open_round` rather than sending directly, so this
+            // counts as a round with its own trigger and its own start time.
+            // Measuring from here is what makes the reported latency the
+            // duration of the exchange, rather than however long a round sat
+            // open waiting for the other side's operator to approve.
+            self.open_round(database, identity, peer_node_id, SyncTrigger::PeerAhead)?;
         }
 
         self.send(
@@ -452,6 +672,12 @@ impl<T: MeshTransport> SyncEngine<T> {
             let complete = events
                 .last()
                 .is_some_and(|last| last.origin_seq >= offer.watermark);
+
+            observe(SyncLog::Sent {
+                peer: peer_node_id,
+                origin: &offer.origin_node,
+                count: events.len(),
+            });
 
             self.send(
                 identity,
@@ -484,15 +710,34 @@ impl<T: MeshTransport> SyncEngine<T> {
             // event, not against the peer that delivered it. This is what makes
             // relaying safe.
             if event.verify().is_err() || event.origin_node != origin_node {
+                observe(SyncLog::EventRejected {
+                    peer: &from.node_id,
+                    origin: origin_node,
+                    reason: "signature or origin binding failed verification",
+                });
                 report.events_rejected += 1;
                 continue;
             }
 
             match database.apply_event(&event, identity.node_id(), Some(&from.node_id)) {
-                Ok(ApplyOutcome::Stored) => report.events_applied += 1,
+                Ok(ApplyOutcome::Stored) => {
+                    observe(SyncLog::Applied {
+                        peer: &from.node_id,
+                        origin: origin_node,
+                        sequence: event.origin_seq,
+                    });
+                    report.events_applied += 1;
+                }
                 Ok(ApplyOutcome::Duplicate) => report.events_duplicate += 1,
                 Ok(ApplyOutcome::Conflict) => report.conflicts_detected += 1,
-                Err(_) => report.events_rejected += 1,
+                Err(error) => {
+                    observe(SyncLog::EventRejected {
+                        peer: &from.node_id,
+                        origin: origin_node,
+                        reason: error.message(),
+                    });
+                    report.events_rejected += 1;
+                }
             }
         }
 
@@ -533,20 +778,11 @@ impl<T: MeshTransport> SyncEngine<T> {
     /// Called periodically so that events created *after* a session opened
     /// still propagate without waiting for a reconnection.
     pub fn sync_all_peers(
-        &self,
+        &mut self,
         database: &Database,
         identity: &NodeIdentity,
     ) -> CoreResult<()> {
-        for peer_node_id in self.connected.keys() {
-            // Re-read trust on every round, so a revocation stops future
-            // rounds immediately rather than at the next reconnection.
-            if database
-                .trust_state_of(peer_node_id)?
-                .permits_authorized_operations()
-            {
-                self.request_sync(database, identity, peer_node_id)?;
-            }
-        }
+        self.open_rounds(database, identity, SyncTrigger::Manual)?;
         Ok(())
     }
 
@@ -556,7 +792,7 @@ impl<T: MeshTransport> SyncEngine<T> {
     /// indistinguishable from "connected and up to date".
     pub fn authorized_peer_count(&self, database: &Database) -> CoreResult<(usize, usize)> {
         let mut authorized = 0;
-        for peer_node_id in self.connected.keys() {
+        for peer_node_id in self.links.keys() {
             if database
                 .trust_state_of(peer_node_id)?
                 .permits_authorized_operations()
@@ -564,7 +800,7 @@ impl<T: MeshTransport> SyncEngine<T> {
                 authorized += 1;
             }
         }
-        Ok((authorized, self.connected.len()))
+        Ok((authorized, self.links.len()))
     }
 }
 

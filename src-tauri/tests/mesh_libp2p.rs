@@ -99,14 +99,31 @@ fn two_nodes_discover_authenticate_and_synchronise_over_quic() {
     assert_ne!(a.node_id, b.node_id, "nodes must have distinct identities");
 
     // 1. Discovery and authentication, with no server involved.
-    wait_until(&[&a, &b], "the two nodes to discover each other", || {
-        !a.runtime.connected_peers().is_empty() && !b.runtime.connected_peers().is_empty()
-    });
+    //
+    // Looked up by node ID rather than taken from index 0: mDNS discovers every
+    // SecureMesh node on the local link, so another instance running on the
+    // same machine — a demo left open, a second developer — would otherwise
+    // make this fail for reasons that have nothing to do with the code.
+    let found_each_other = || {
+        a.runtime
+            .connected_peers()
+            .iter()
+            .any(|peer| peer.node_id == b.node_id)
+            && b.runtime
+                .connected_peers()
+                .iter()
+                .any(|peer| peer.node_id == a.node_id)
+    };
+    wait_until(&[&a, &b], "the two nodes to discover each other", found_each_other);
 
     // The peer each node authenticated is the other's real identity: the
     // node ID is re-derived from the key libp2p proved possession of.
-    let peer_of_a = &a.runtime.connected_peers()[0];
-    assert_eq!(peer_of_a.node_id, b.node_id);
+    let peer_of_a = a
+        .runtime
+        .connected_peers()
+        .into_iter()
+        .find(|peer| peer.node_id == b.node_id)
+        .expect("B must be among A's authenticated peers");
     assert_eq!(
         peer_of_a.node_id,
         securemesh_lib::identity::node_id_for_public_key(&peer_of_a.public_key),

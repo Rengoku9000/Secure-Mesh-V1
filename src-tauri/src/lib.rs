@@ -79,6 +79,7 @@ pub fn run() {
             commands::reject_peer,
             commands::revoke_peer,
             commands::get_trust_audit_log,
+            commands::get_link_states,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -137,18 +138,28 @@ fn start_node(data_dir: &std::path::Path) -> CoreResult<NodeRuntime> {
     }
 }
 
-/// Drives the sync engine on a timer.
+/// Drives the sync engine.
 ///
-/// Two cadences, for two different jobs: a short tick to process whatever has
-/// arrived, and a slower full round so that records created while a session was
-/// already open still propagate without waiting for a reconnection.
+/// The tick only *delivers* what the transport has already received; it is not
+/// what causes synchronisation. Every legitimate cause — a connection, an
+/// authorization, a local write, a peer announcing it is ahead — fires its own
+/// trigger through the sync engine at the moment it happens.
+///
+/// The reconciliation sweep is a safety net for a message lost without a
+/// disconnection event, and is deliberately infrequent. In Phase 2.5 this loop
+/// ran a full round every five seconds and *was* the trigger, which is why an
+/// approved peer could sit idle: nothing connected the decision to the work.
 fn spawn_mesh_loop(runtime: Arc<NodeRuntime>) {
     if !runtime.mesh_attached() {
         return;
     }
 
-    const TICK: std::time::Duration = std::time::Duration::from_millis(250);
-    const RESYNC_EVERY: u32 = 20; // ≈5 seconds
+    // Short enough that inbound messages are handled promptly; this is a
+    // delivery pump, not a retry loop.
+    const TICK_MS: u64 = 100;
+    const TICK: std::time::Duration = std::time::Duration::from_millis(TICK_MS);
+    const RECONCILE_EVERY: u32 =
+        (sync::RECONCILE_INTERVAL_SECS * 1000 / TICK_MS) as u32;
 
     std::thread::Builder::new()
         .name("securemesh-sync".to_string())
@@ -171,20 +182,18 @@ fn spawn_mesh_loop(runtime: Arc<NodeRuntime>) {
                 }
 
                 ticks = ticks.wrapping_add(1);
-                if ticks.is_multiple_of(RESYNC_EVERY) {
-                    match runtime.authorized_peer_count() {
-                        Ok((0, connected)) if connected > 0 => eprintln!(
-                            "[securemesh] {connected} peer(s) connected, none authorized — \
-                             enrollment required before anything is exchanged"
-                        ),
-                        Ok((authorized, connected)) if connected > 0 => eprintln!(
-                            "[securemesh] sync round: {authorized}/{connected} peer(s) authorized"
-                        ),
-                        _ => {}
+                if ticks.is_multiple_of(RECONCILE_EVERY) {
+                    if let Ok((0, connected)) = runtime.authorized_peer_count() {
+                        if connected > 0 {
+                            eprintln!(
+                                "[securemesh] {connected} peer(s) connected, none authorized — \
+                                 enrollment required before anything is exchanged"
+                            );
+                        }
                     }
 
-                    if let Err(error) = runtime.request_sync() {
-                        eprintln!("[securemesh] sync round failed: {}", error.message());
+                    if let Err(error) = runtime.reconcile() {
+                        eprintln!("[securemesh] reconciliation failed: {}", error.message());
                     }
                 }
 

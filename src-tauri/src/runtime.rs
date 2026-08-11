@@ -17,7 +17,7 @@ use crate::identity::{NodeIdentity, PublicIdentity};
 use crate::networking::{MeshTransport, PeerDescriptor};
 use crate::security::{audit, AuditEvent, AuditOutcome};
 use crate::storage::Database;
-use crate::sync::{SyncEngine, SyncReport};
+use crate::sync::{LinkSnapshot, SyncEngine, SyncReport};
 use serde::Serialize;
 use std::path::Path;
 use std::sync::Mutex;
@@ -132,7 +132,7 @@ impl NodeRuntime {
         let Some(mesh) = &self.mesh else {
             return Ok(());
         };
-        let engine = mesh
+        let mut engine = mesh
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         engine.sync_all_peers(&self.database, &self.identity)
@@ -204,21 +204,54 @@ impl NodeRuntime {
     /// is what stops an approved peer from promoting itself or anyone else.
     pub fn approve_peer(&self, node_id: &str, note: Option<&str>) -> CoreResult<TrustState> {
         self.require_local_capability(Capability::PeerEnroll)?;
-        self.database.approve_peer(&self.identity, node_id, note)
+        let state = self.database.approve_peer(&self.identity, node_id, note)?;
+        self.notify_authorization_changed(node_id);
+        Ok(state)
     }
 
     /// Refuses a peer that has never been trusted. Requires
     /// [`Capability::PeerEnroll`].
     pub fn reject_peer(&self, node_id: &str, note: Option<&str>) -> CoreResult<TrustState> {
         self.require_local_capability(Capability::PeerEnroll)?;
-        self.database.reject_peer(&self.identity, node_id, note)
+        let state = self.database.reject_peer(&self.identity, node_id, note)?;
+        self.notify_authorization_changed(node_id);
+        Ok(state)
     }
 
     /// Withdraws authorization from a peer. Requires
     /// [`Capability::PeerRevoke`].
+    ///
+    /// The link is moved out of a sync-capable state immediately, so an open
+    /// session stops replicating without waiting for a reconnection.
     pub fn revoke_peer(&self, node_id: &str, note: Option<&str>) -> CoreResult<TrustState> {
         self.require_local_capability(Capability::PeerRevoke)?;
-        self.database.revoke_peer(&self.identity, node_id, note)
+        let state = self.database.revoke_peer(&self.identity, node_id, note)?;
+        self.notify_authorization_changed(node_id);
+        Ok(state)
+    }
+
+    /// Live synchronisation state for every open session.
+    pub fn link_states(&self) -> Vec<LinkSnapshot> {
+        self.mesh
+            .as_ref()
+            .map(|mesh| {
+                mesh.lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .link_snapshots()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Runs the periodic reconciliation sweep. See
+    /// [`crate::sync::RECONCILE_INTERVAL_SECS`].
+    pub fn reconcile(&self) -> CoreResult<()> {
+        let Some(mesh) = &self.mesh else {
+            return Ok(());
+        };
+        let mut engine = mesh
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        engine.reconcile(&self.database, &self.identity)
     }
 
     /// The authorization state of a peer.
@@ -295,19 +328,74 @@ impl NodeRuntime {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Signs and applies an event authored by this node.
+    /// Signs and applies an event authored by this node, then tells the mesh.
     fn append_local_event(
         &self,
         kind: EventKind,
         payload: impl Serialize,
     ) -> CoreResult<MeshEvent> {
-        let _guard = self.lock_local_append();
+        let event = {
+            let _guard = self.lock_local_append();
 
-        let sequence = self.database.next_local_sequence(self.identity.node_id())?;
-        let event = MeshEvent::create(&self.identity, sequence, kind, payload)?;
-        self.database
-            .apply_event(&event, self.identity.node_id(), None)?;
+            let sequence = self.database.next_local_sequence(self.identity.node_id())?;
+            let event = MeshEvent::create(&self.identity, sequence, kind, payload)?;
+            self.database
+                .apply_event(&event, self.identity.node_id(), None)?;
+            event
+        };
+
+        // **Trigger: a local write.** Without this a record created during an
+        // open session would sit until something else happened to start a
+        // round. The append lock is released first so a slow mesh cannot block
+        // the next local write.
+        self.notify_local_event();
         Ok(event)
+    }
+
+    /// Opens a round with connected peers because local state changed.
+    ///
+    /// Deliberately infallible from the caller's point of view: a write has
+    /// already been committed durably, and a mesh that cannot be reached is a
+    /// normal field condition, not a reason to fail the write. The event log is
+    /// the queue, so nothing is lost — the next trigger or reconciliation
+    /// carries it.
+    fn notify_local_event(&self) {
+        let Some(mesh) = &self.mesh else {
+            return;
+        };
+        let mut engine = mesh
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        if let Err(error) = engine.on_local_event(&self.database, &self.identity) {
+            eprintln!(
+                "[securemesh] could not announce a local event: {}",
+                error.message()
+            );
+        }
+    }
+
+    /// Tells the mesh that a peer's authorization changed.
+    ///
+    /// **Trigger: authorization.** This is the fix for the observed failure:
+    /// approving a peer that is already connected starts replication from the
+    /// decision itself, rather than leaving it to a periodic sweep.
+    fn notify_authorization_changed(&self, peer_node_id: &str) {
+        let Some(mesh) = &self.mesh else {
+            return;
+        };
+        let mut engine = mesh
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        if let Err(error) =
+            engine.on_authorization_changed(&self.database, &self.identity, peer_node_id)
+        {
+            eprintln!(
+                "[securemesh] could not act on an authorization change: {}",
+                error.message()
+            );
+        }
     }
 
     /// The operator-facing node name, for startup logging and diagnostics.

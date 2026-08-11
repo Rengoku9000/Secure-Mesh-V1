@@ -4,6 +4,7 @@ use super::AppState;
 use crate::domain::Peer;
 use crate::error::CoreResult;
 use crate::runtime::{NetworkStatus, SystemStatus};
+use crate::sync::LinkSnapshot;
 use tauri::State;
 
 /// Health of every subsystem, for the dashboard's status panel.
@@ -16,6 +17,17 @@ pub fn get_system_status(state: State<'_, AppState>) -> CoreResult<SystemStatus>
 #[tauri::command]
 pub fn get_network_status(state: State<'_, AppState>) -> CoreResult<NetworkStatus> {
     state.runtime.network_status()
+}
+
+/// Live synchronisation state for every open session.
+///
+/// Reports where each link has reached in its lifecycle, how many rounds it has
+/// run, and how many events it has accepted — so "connected but idle because it
+/// is up to date" is distinguishable from "connected but idle because nothing
+/// authorized it".
+#[tauri::command]
+pub fn get_link_states(state: State<'_, AppState>) -> CoreResult<Vec<LinkSnapshot>> {
+    Ok(state.runtime.link_states())
 }
 
 /// Known peers, with live connection state and per-peer sync backlog.

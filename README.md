@@ -162,7 +162,7 @@ The first build compiles the Rust core and takes several minutes.
 
 ```bash
 cd src-tauri
-cargo test            # 284 tests: 221 unit + 63 integration
+cargo test            # 315 tests: 236 unit + 79 integration
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
@@ -234,6 +234,24 @@ Deleting the directory resets the node to a first launch.
 - Validates all input in Rust, never in the frontend
 - Light and dark themes from one token set
 
+**Phase 2.6 — deterministic synchronisation**
+
+- Replication is **caused**, not waited for: every legitimate cause —
+  connection, authorization, a local write, a peer announcing it is ahead, a
+  relay learning something new — fires its own trigger, and all of them funnel
+  into one code path
+- An explicit per-peer lifecycle (`Connected → Authenticated →
+  AwaitingAuthorization → Syncing → Synced`) so "idle because up to date" is
+  distinguishable from "idle because nothing authorized it"
+- Independent of **who dialled, who approved first, and who holds the data**
+- The periodic sweep is a 60-second safety net, not the mechanism; the
+  determinism tests never run it at all
+- Structured `sync.*` logging with per-round latency
+
+Measured on one machine over real QUIC: **authorization → sync round start in
+under 1 ms**, approval → the record landing on the peer in **340 ms**, of which
+the productive exchange was **240 ms**.
+
 **Phase 2.5 — the trust layer**
 
 - Distinguishes **authentication** ("are you who you claim?") from
@@ -302,6 +320,7 @@ Full analysis: [`docs/security/SECURITY.md`](docs/security/SECURITY.md).
 | **1** | Node foundation: identity, storage, incidents, dashboard | ✅ **Complete** |
 | **2** | P2P mesh: libp2p, QUIC, authenticated peers, signed events, offline sync | ✅ **Complete** |
 | **2.5** | Peer trust: enrollment, authorization, capabilities, revocation, audit | ✅ **Complete** |
+| **2.6** | Deterministic sync: explicit lifecycle, real triggers, observability | ✅ **Complete** |
 | **3** | Local inference: classification, extraction, summarisation | 📋 Designed |
 | **4** | Local RAG: embeddings, vector index, grounded answers | 📋 Designed |
 | **5** | Confidential computing: TPM-backed keys, encrypted storage, TEE | 🔍 Research |

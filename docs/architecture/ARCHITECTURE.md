@@ -234,6 +234,65 @@ peer still needs is derived from the log minus that peer's acknowledgement
 watermark, both of which are in SQLite. A second buffer would be one more thing
 to keep in step with the log, and one more thing to lose on a crash.
 
+### 5.4b Synchronisation is caused, not awaited (Phase 2.6)
+
+Phase 2.5 had a defect that only showed up in a live demonstration: two peers
+connected, were approved by both operators, and then exchanged nothing for
+about seventy seconds.
+
+**Root cause.** There was no trigger for authorization. Only two things ever
+started a round — a connection, and a five-second timer. Approving a peer that
+was *already connected* therefore had no causal path to replication at all; the
+timer was doing the work, and the timer was doing it for reasons unrelated to
+what had just happened. The same hole applied to a record written during an
+open session.
+
+This is reproduced deterministically in `tests/sync_determinism.rs`, which never
+calls the timer: against the Phase 2.5 engine **11 of its 16 cases fail**. The 5
+that passed were all reconnection and restart cases — exactly the ones that
+happen to hit the connection trigger, which is why the failure looked
+intermittent and why restarting the application "fixed" it.
+
+**The fix** is an explicit per-peer lifecycle plus a trigger for every cause:
+
+```text
+   Disconnected ──▶ Connected ──▶ Authenticated ──▶ AwaitingAuthorization
+                                        │                    │
+                                        └──── authorized ────┤
+                                                             ▼
+                                                    Syncing ⇄ Synced
+```
+
+| Trigger | Fires when |
+|---|---|
+| `connected` | A session is established, from **either** direction |
+| `local_authorization` | This node approves or reinstates a peer |
+| `local_event` | A record is written locally |
+| `peer_ahead` | A peer's request reveals it holds more than this node |
+| `relay` | Events were accepted, and another peer may lack them |
+| `manual` | An operator asks explicitly |
+| `reconciliation` | The periodic safety net — see below |
+
+Every one of them funnels into a single `open_round`, so a new cause cannot
+acquire its own subtly different rules. That is precisely how the original gap
+arose: connection had a path and authorization did not.
+
+**Direction independence.** A round carries the sender's watermarks, so a
+responder that finds itself behind reciprocates. One request from *either* side
+therefore reconciles *both*, which is what makes convergence independent of who
+dialled, who approved first, and who happens to hold the data.
+
+**The periodic sweep is now a safety net, not the mechanism.** It runs every 60
+seconds (was 5) and exists only to recover a message lost to a transport failure
+that produced no disconnection event. The determinism tests never run it at all.
+If correctness ever appears to need it faster, a trigger is missing.
+
+**A second, related defect** was fixed at the same time: `tick` propagated
+errors out of the event loop, and because `poll_events` had already *drained*
+the transport, every remaining event in that batch was discarded permanently.
+One bad event could therefore silently lose a `PeerConnected`, leaving a peer
+connected but invisible to the engine. Each event is now handled independently.
+
 ### 5.5 Synchronisation model
 
 Pull-based. A node states what it holds; the peer computes the difference:
