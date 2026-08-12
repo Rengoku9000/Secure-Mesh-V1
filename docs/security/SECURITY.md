@@ -534,6 +534,28 @@ login, and no per-record access control.
 Audit records go to stderr. They are not persisted, not signed, and not
 append-only. They are useful for diagnostics; they are **not** evidence.
 
+**The audit log records changes and refusals, never reads.** Reading the node's
+public identity used to emit a record, which sounded prudent until the dashboard
+polled it twice every two seconds — roughly 86,000 records a day stating that
+nothing had happened. A log that must be filtered before it can be read is not
+an audit log, and that volume would have buried a revocation.
+
+The rule is now explicit: an audit record marks a *state change or a decision* —
+a key generated, a peer authorized, a record written, an operation refused. Not
+an observation of state that is immutable, non-secret, and already broadcast to
+every peer by mDNS. `AuditEvent` has no variant for disclosure, and
+`runtime::public_identity` is silent. Measured after the change: one minute of
+dashboard polling produces **three** records, all from startup.
+
+Two of those three are `identity.loaded`, which is correct rather than
+duplication — the private key really is read from disk twice during startup,
+once by the mesh transport (which needs the key before the runtime exists) and
+once by the runtime. Two reads of key material, two records. Collapsing them
+would make the log less truthful, not less noisy.
+
+`security::audit::capture` lets a test observe what a call emits, so "this is
+silent" is checked rather than asserted by reading the source.
+
 ### 6.5 ~~Records are not signed~~ — CLOSED in Phase 2
 
 Every replicated event is now signed by its author and bound to that author's

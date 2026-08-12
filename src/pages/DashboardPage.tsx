@@ -38,6 +38,16 @@ import type {
 const REFRESH_INTERVAL_MS = 2000;
 
 /**
+ * State that changes, and state that does not.
+ *
+ * The node's identity is fixed for the life of the process — it is loaded from
+ * the keystore once at startup and never mutated — so re-reading it on every
+ * tick was pure churn. Mesh state genuinely changes underneath the operator and
+ * has to be re-read; identity is fetched once and shared by every component
+ * that needs it.
+ */
+
+/**
  * The single screen of the Phase 1 application.
  *
  * All state comes from the Rust core; this component orchestrates fetching and
@@ -59,9 +69,9 @@ export function DashboardPage() {
   const refresh = useCallback(async () => {
     try {
       // Fetched together so the header, status panel, peer list and timeline
-      // always describe the same moment.
+      // always describe the same moment. Identity is absent deliberately: it
+      // cannot change, so polling it would only add load.
       const [
-        nextIdentity,
         nextStatus,
         nextNetwork,
         nextPeers,
@@ -69,7 +79,6 @@ export function DashboardPage() {
         nextAuthority,
         nextIntelligence,
       ] = await Promise.all([
-        getNodeIdentity(),
         getSystemStatus(),
         getNetworkStatus(),
         getPeers(),
@@ -78,7 +87,6 @@ export function DashboardPage() {
         getIntelligenceStatus(),
       ]);
 
-      setIdentity(nextIdentity);
       setSystemStatus(nextStatus);
       setNetwork(nextNetwork);
       setPeers(nextPeers);
@@ -92,6 +100,26 @@ export function DashboardPage() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Identity is read once. It is fixed for the life of the process, so a second
+  // read could only ever return the same answer.
+  useEffect(() => {
+    let cancelled = false;
+
+    void getNodeIdentity()
+      .then((value) => {
+        if (!cancelled) setIdentity(value);
+      })
+      .catch((raw: CoreError) => {
+        if (!cancelled) {
+          setError(raw.message ?? "The SecureMesh core did not respond.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

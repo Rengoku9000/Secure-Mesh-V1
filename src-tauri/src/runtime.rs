@@ -496,21 +496,23 @@ impl NodeRuntime {
     }
 
     /// The operator-facing node name, for startup logging and diagnostics.
-    ///
-    /// Separate from [`public_identity`](Self::public_identity) so that reading
-    /// the name for a log line does not record an identity-disclosure audit
-    /// event; that event should mean "the UI asked for the identity".
     pub fn node_name(&self) -> &str {
         self.identity.node_name()
     }
 
     /// The node's public identity. Never includes private key material.
+    ///
+    /// # Why this is not audited
+    ///
+    /// It is a pure read of data that is immutable for the life of the process,
+    /// contains no secret, and is already broadcast to every peer on the link by
+    /// mDNS. Recording it told an operator nothing they could act on.
+    ///
+    /// It was audited once, and the dashboard polled it twice every two seconds
+    /// — about 86,000 records a day, enough to bury a revocation. The moment
+    /// worth auditing is when the identity is *created* or *loaded*, and both
+    /// still are. See [`crate::security::audit`].
     pub fn public_identity(&self) -> PublicIdentity {
-        audit(
-            AuditEvent::PublicIdentityDisclosed,
-            AuditOutcome::Success,
-            &format!("node={}", self.identity.node_name()),
-        );
         self.identity.public()
     }
 
@@ -807,6 +809,101 @@ mod tests {
         assert!(dir.path().join(KEYSTORE_FILE).exists());
         assert!(dir.path().join(DATABASE_FILE).exists());
         assert!(node.public_identity().node_name.starts_with("SM-"));
+    }
+
+    // --- The audit log records changes, not reads --------------------------
+
+    #[test]
+    fn reading_the_public_identity_is_silent() {
+        // The dashboard polls this. Auditing it produced roughly 86,000 records
+        // a day that said nothing happened, which is enough to bury a
+        // revocation. Asserted by capture rather than by reading the source, so
+        // it stays true if the call moves.
+        let dir = TempDir::new().unwrap();
+        let node = NodeRuntime::initialize(dir.path()).unwrap();
+
+        let (_, records) = crate::security::audit::capture(|| {
+            for _ in 0..100 {
+                let _ = node.public_identity();
+            }
+        });
+
+        assert!(
+            records.is_empty(),
+            "a pure read must not write to the audit log, got {records:?}"
+        );
+    }
+
+    #[test]
+    fn the_other_dashboard_reads_are_silent_too() {
+        // One poll of everything the dashboard fetches on a timer. Whatever the
+        // interval, an idle node must produce an idle audit log.
+        let dir = TempDir::new().unwrap();
+        let node = NodeRuntime::initialize(dir.path()).unwrap();
+
+        let (_, records) = crate::security::audit::capture(|| {
+            let _ = node.system_status();
+            let _ = node.network_status();
+            let _ = node.list_incidents(None);
+            let _ = node.list_peers();
+            let _ = node.local_role();
+            let _ = node.intelligence_status();
+        });
+
+        assert!(
+            records.is_empty(),
+            "polling an idle node must be silent, got {records:?}"
+        );
+    }
+
+    #[test]
+    fn a_real_security_event_is_still_recorded() {
+        // The other half of the claim: quietening reads must not have
+        // quietened anything that matters.
+        let dir = TempDir::new().unwrap();
+        let node = NodeRuntime::initialize(dir.path()).unwrap();
+
+        let (_, records) = crate::security::audit::capture(|| {
+            node.create_incident(input("Bridge collapsed", "CRITICAL"))
+                .unwrap();
+        });
+
+        assert!(
+            records
+                .iter()
+                .any(|(event, _)| *event == crate::security::AuditEvent::IncidentCreated),
+            "writing a record must still be audited, got {records:?}"
+        );
+    }
+
+    #[test]
+    fn identity_creation_and_loading_are_still_recorded() {
+        // The events the audit log exists for. Creating a node writes both an
+        // identity record and a database record.
+        let dir = TempDir::new().unwrap();
+
+        let (node, first_run) =
+            crate::security::audit::capture(|| NodeRuntime::initialize(dir.path()).unwrap());
+        drop(node);
+
+        assert!(
+            first_run
+                .iter()
+                .any(|(event, _)| *event == crate::security::AuditEvent::IdentityCreated),
+            "generating a keypair must be audited, got {first_run:?}"
+        );
+
+        // Reopening the same directory loads the existing identity rather than
+        // creating one, and says so.
+        let (_node, second_run) =
+            crate::security::audit::capture(|| NodeRuntime::initialize(dir.path()).unwrap());
+
+        assert!(
+            second_run
+                .iter()
+                .any(|(event, _)| *event == crate::security::AuditEvent::IdentityLoaded),
+            "loading an existing keypair must be audited, got {second_run:?}"
+        );
     }
 
     #[test]
