@@ -89,9 +89,7 @@ pub fn apply(conn: &mut Connection) -> CoreResult<usize> {
 
     // `user_version` does not accept a bound parameter, so it is formatted in.
     // The value is an i32 from a compile-time constant, never user input.
-    let new_version = pending
-        .last()
-        .map_or(from_version, |m| m.version);
+    let new_version = pending.last().map_or(from_version, |m| m.version);
     transaction.pragma_update(None, "user_version", new_version)?;
     transaction.commit()?;
 
@@ -160,9 +158,11 @@ mod tests {
         assert_eq!(current_version(&conn).unwrap(), target_version());
 
         let description: String = conn
-            .query_row("SELECT description FROM incidents WHERE id = 'inc-1'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT description FROM incidents WHERE id = 'inc-1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(description, "legacy incident");
 
@@ -213,7 +213,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(trust, "UNKNOWN", "existing peers must not stay implicitly trusted");
+        assert_eq!(
+            trust, "UNKNOWN",
+            "existing peers must not stay implicitly trusted"
+        );
     }
 
     #[test]

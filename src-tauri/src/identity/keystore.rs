@@ -321,7 +321,10 @@ mod tests {
         let store = FileKeyStore::new(dir.path().join("identity.json"));
         store.store(&sample_key()).unwrap();
 
-        let mode = std::fs::metadata(store.path()).unwrap().permissions().mode();
+        let mode = std::fs::metadata(store.path())
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o077, 0, "group/other bits must be clear");
     }
 }

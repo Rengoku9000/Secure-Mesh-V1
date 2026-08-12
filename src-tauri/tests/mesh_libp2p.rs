@@ -114,7 +114,11 @@ fn two_nodes_discover_authenticate_and_synchronise_over_quic() {
                 .iter()
                 .any(|peer| peer.node_id == a.node_id)
     };
-    wait_until(&[&a, &b], "the two nodes to discover each other", found_each_other);
+    wait_until(
+        &[&a, &b],
+        "the two nodes to discover each other",
+        found_each_other,
+    );
 
     // The peer each node authenticated is the other's real identity: the
     // node ID is re-derived from the key libp2p proved possession of.
@@ -146,13 +150,22 @@ fn two_nodes_discover_authenticate_and_synchronise_over_quic() {
         !discovered_state.permits_authorized_operations(),
         "a discovered peer must not be authorized on sight, but was {discovered_state}"
     );
-    assert_ne!(discovered_state, securemesh_lib::domain::TrustState::Trusted);
+    assert_ne!(
+        discovered_state,
+        securemesh_lib::domain::TrustState::Trusted
+    );
 
-    a.runtime.approve_peer(&b.node_id, Some("demo peer")).unwrap();
-    b.runtime.approve_peer(&a.node_id, Some("demo peer")).unwrap();
+    a.runtime
+        .approve_peer(&b.node_id, Some("demo peer"))
+        .unwrap();
+    b.runtime
+        .approve_peer(&a.node_id, Some("demo peer"))
+        .unwrap();
 
     // 3. Replication over the encrypted session, now that it is authorized.
-    a.runtime.create_incident(incident("QUIC replication works")).unwrap();
+    a.runtime
+        .create_incident(incident("QUIC replication works"))
+        .unwrap();
 
     wait_until(&[&a, &b], "the incident to reach node B", || {
         b.runtime.list_incidents(None).unwrap().len() == 1
@@ -166,7 +179,9 @@ fn two_nodes_discover_authenticate_and_synchronise_over_quic() {
     );
 
     // 4. Bidirectional.
-    b.runtime.create_incident(incident("and back the other way")).unwrap();
+    b.runtime
+        .create_incident(incident("and back the other way"))
+        .unwrap();
     wait_until(&[&a, &b], "B's incident to reach node A", || {
         a.runtime.list_incidents(None).unwrap().len() == 2
     });
@@ -187,7 +202,9 @@ fn a_node_with_no_peers_starts_and_operates_normally() {
     // working: an isolated node is the normal field case.
     let node = spawn();
 
-    node.runtime.create_incident(incident("alone on the mesh")).unwrap();
+    node.runtime
+        .create_incident(incident("alone on the mesh"))
+        .unwrap();
     node.runtime.sync_tick().unwrap();
 
     assert_eq!(node.runtime.list_incidents(None).unwrap().len(), 1);

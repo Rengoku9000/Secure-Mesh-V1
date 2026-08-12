@@ -83,9 +83,7 @@ impl Unavailable {
             Unavailable::RuntimeFailed(reason) => {
                 format!("The local inference runtime is not responding: {reason}")
             }
-            Unavailable::Disabled => {
-                "Local intelligence is switched off on this node.".to_string()
-            }
+            Unavailable::Disabled => "Local intelligence is switched off on this node.".to_string(),
         }
     }
 }

@@ -112,7 +112,9 @@ impl IncidentCategory {
             IncidentCategory::Infrastructure => {
                 "damage to a built structure — bridge, wall, building, culvert"
             }
-            IncidentCategory::Flooding => "water where it should not be — rising, standing, or burst",
+            IncidentCategory::Flooding => {
+                "water where it should not be — rising, standing, or burst"
+            }
             IncidentCategory::Fire => "active fire, smoke, or flames",
             IncidentCategory::Medical => "casualties, injuries, or a request for medical support",
             IncidentCategory::Evacuation => "people being moved, sheltered, or assembled",
@@ -123,7 +125,9 @@ impl IncidentCategory {
             }
             IncidentCategory::Earthquake => "tremor, aftershock, or seismic damage",
             IncidentCategory::SevereWeather => "storm, high wind, or hail as the reported hazard",
-            IncidentCategory::RoadBlockage => "a route obstructed by debris, landslip, or a fallen tree",
+            IncidentCategory::RoadBlockage => {
+                "a route obstructed by debris, landslip, or a fallen tree"
+            }
             IncidentCategory::Other => "none of the above fits",
         }
     }
@@ -158,10 +162,7 @@ impl FromStr for IncidentCategory {
         // variant is more useful than discarding an otherwise good analysis,
         // and it is still a closed set — anything unrecognised becomes `Other`
         // rather than a new category.
-        let normalised = value
-            .trim()
-            .to_ascii_uppercase()
-            .replace([' ', '-'], "_");
+        let normalised = value.trim().to_ascii_uppercase().replace([' ', '-'], "_");
 
         match normalised.as_str() {
             "INFRASTRUCTURE" => Ok(IncidentCategory::Infrastructure),

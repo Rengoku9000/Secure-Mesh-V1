@@ -110,10 +110,18 @@ mod tests {
     fn the_transport_identity_survives_a_restart() {
         let dir = TempDir::new().unwrap();
 
-        let first = identity(&dir).libp2p_keypair().unwrap().public().to_peer_id();
+        let first = identity(&dir)
+            .libp2p_keypair()
+            .unwrap()
+            .public()
+            .to_peer_id();
         // A reloaded identity must present the same peer ID, or peers would see
         // a different node after every restart.
-        let second = identity(&dir).libp2p_keypair().unwrap().public().to_peer_id();
+        let second = identity(&dir)
+            .libp2p_keypair()
+            .unwrap()
+            .public()
+            .to_peer_id();
         assert_eq!(first, second);
     }
 
@@ -123,8 +131,16 @@ mod tests {
         let dir_b = TempDir::new().unwrap();
 
         assert_ne!(
-            identity(&dir_a).libp2p_keypair().unwrap().public().to_peer_id(),
-            identity(&dir_b).libp2p_keypair().unwrap().public().to_peer_id()
+            identity(&dir_a)
+                .libp2p_keypair()
+                .unwrap()
+                .public()
+                .to_peer_id(),
+            identity(&dir_b)
+                .libp2p_keypair()
+                .unwrap()
+                .public()
+                .to_peer_id()
         );
     }
 }

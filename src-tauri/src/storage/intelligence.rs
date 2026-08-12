@@ -622,7 +622,9 @@ mod tests {
     #[test]
     fn an_analysis_cannot_reference_an_incident_this_node_does_not_hold() {
         let f = fixture();
-        let err = f.db.store_analysis(&analysis("no-such-incident")).unwrap_err();
+        let err =
+            f.db.store_analysis(&analysis("no-such-incident"))
+                .unwrap_err();
         assert_eq!(err.code(), "NOT_FOUND");
     }
 
@@ -656,9 +658,8 @@ mod tests {
     #[test]
     fn a_document_and_its_chunks_are_imported_together() {
         let f = fixture();
-        let id = f
-            .db
-            .import_document(
+        let id =
+            f.db.import_document(
                 "Flood Response",
                 "manual.txt",
                 "synthetic",
@@ -716,11 +717,10 @@ mod tests {
     #[test]
     fn deleting_a_document_removes_its_chunks() {
         let f = fixture();
-        let id = f
-            .db
-            .import_document("Doc", "s", "t", "h", &["a".to_string(), "b".to_string()])
-            .unwrap()
-            .unwrap();
+        let id =
+            f.db.import_document("Doc", "s", "t", "h", &["a".to_string(), "b".to_string()])
+                .unwrap()
+                .unwrap();
 
         f.db.conn()
             .execute("DELETE FROM knowledge_documents WHERE id = ?1", params![id])
@@ -771,9 +771,16 @@ mod tests {
         )
         .unwrap();
 
-        assert!(f.db.chunks_awaiting_embedding("model-a", 10).unwrap().is_empty());
+        assert!(f
+            .db
+            .chunks_awaiting_embedding("model-a", 10)
+            .unwrap()
+            .is_empty());
         // Vectors are not comparable across models, so a new model starts over.
-        assert_eq!(f.db.chunks_awaiting_embedding("model-b", 10).unwrap().len(), 1);
+        assert_eq!(
+            f.db.chunks_awaiting_embedding("model-b", 10).unwrap().len(),
+            1
+        );
     }
 
     #[test]
@@ -783,10 +790,18 @@ mod tests {
             .unwrap();
         let chunk = f.db.chunks_awaiting_embedding("test-embed", 10).unwrap()[0].clone();
 
-        f.db.store_embedding(EmbeddingKind::KnowledgeChunk, &chunk.id, &embed(vec![1.0, 0.0]))
-            .unwrap();
-        f.db.store_embedding(EmbeddingKind::KnowledgeChunk, &chunk.id, &embed(vec![0.0, 1.0]))
-            .unwrap();
+        f.db.store_embedding(
+            EmbeddingKind::KnowledgeChunk,
+            &chunk.id,
+            &embed(vec![1.0, 0.0]),
+        )
+        .unwrap();
+        f.db.store_embedding(
+            EmbeddingKind::KnowledgeChunk,
+            &chunk.id,
+            &embed(vec![0.0, 1.0]),
+        )
+        .unwrap();
 
         assert_eq!(f.db.count_embeddings().unwrap(), 1);
     }
@@ -799,17 +814,30 @@ mod tests {
             "s",
             "synthetic",
             "h",
-            &["evacuate low ground".to_string(), "unrelated text".to_string()],
+            &[
+                "evacuate low ground".to_string(),
+                "unrelated text".to_string(),
+            ],
         )
         .unwrap();
 
         let chunks = f.db.chunks_awaiting_embedding("test-embed", 10).unwrap();
-        f.db.store_embedding(EmbeddingKind::KnowledgeChunk, &chunks[0].id, &embed(vec![1.0, 0.0]))
-            .unwrap();
-        f.db.store_embedding(EmbeddingKind::KnowledgeChunk, &chunks[1].id, &embed(vec![0.0, 1.0]))
-            .unwrap();
+        f.db.store_embedding(
+            EmbeddingKind::KnowledgeChunk,
+            &chunks[0].id,
+            &embed(vec![1.0, 0.0]),
+        )
+        .unwrap();
+        f.db.store_embedding(
+            EmbeddingKind::KnowledgeChunk,
+            &chunks[1].id,
+            &embed(vec![0.0, 1.0]),
+        )
+        .unwrap();
 
-        let hits = f.db.search_embeddings(&embed(vec![1.0, 0.0]), 5, -1.0).unwrap();
+        let hits =
+            f.db.search_embeddings(&embed(vec![1.0, 0.0]), 5, -1.0)
+                .unwrap();
 
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].content, "evacuate low ground");
@@ -834,10 +862,9 @@ mod tests {
         )
         .unwrap();
 
-        let hits = f
-            .db
-            .search_embeddings(&Embedding::new(vec![1.0, 0.0], "model-b").unwrap(), 5, -1.0)
-            .unwrap();
+        let hits =
+            f.db.search_embeddings(&Embedding::new(vec![1.0, 0.0], "model-b").unwrap(), 5, -1.0)
+                .unwrap();
         assert!(hits.is_empty());
     }
 
@@ -849,12 +876,22 @@ mod tests {
             .unwrap();
 
         let chunk = f.db.chunks_awaiting_embedding("test-embed", 10).unwrap()[0].clone();
-        f.db.store_embedding(EmbeddingKind::KnowledgeChunk, &chunk.id, &embed(vec![0.9, 0.1]))
-            .unwrap();
-        f.db.store_embedding(EmbeddingKind::Incident, &incident_id, &embed(vec![1.0, 0.0]))
-            .unwrap();
+        f.db.store_embedding(
+            EmbeddingKind::KnowledgeChunk,
+            &chunk.id,
+            &embed(vec![0.9, 0.1]),
+        )
+        .unwrap();
+        f.db.store_embedding(
+            EmbeddingKind::Incident,
+            &incident_id,
+            &embed(vec![1.0, 0.0]),
+        )
+        .unwrap();
 
-        let hits = f.db.search_embeddings(&embed(vec![1.0, 0.0]), 5, -1.0).unwrap();
+        let hits =
+            f.db.search_embeddings(&embed(vec![1.0, 0.0]), 5, -1.0)
+                .unwrap();
 
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].kind, EmbeddingKind::Incident);
@@ -868,12 +905,22 @@ mod tests {
             .unwrap();
         let chunks = f.db.chunks_awaiting_embedding("test-embed", 10).unwrap();
 
-        f.db.store_embedding(EmbeddingKind::KnowledgeChunk, &chunks[0].id, &embed(vec![1.0, 0.0]))
-            .unwrap();
-        f.db.store_embedding(EmbeddingKind::KnowledgeChunk, &chunks[1].id, &embed(vec![-1.0, 0.0]))
-            .unwrap();
+        f.db.store_embedding(
+            EmbeddingKind::KnowledgeChunk,
+            &chunks[0].id,
+            &embed(vec![1.0, 0.0]),
+        )
+        .unwrap();
+        f.db.store_embedding(
+            EmbeddingKind::KnowledgeChunk,
+            &chunks[1].id,
+            &embed(vec![-1.0, 0.0]),
+        )
+        .unwrap();
 
-        let hits = f.db.search_embeddings(&embed(vec![1.0, 0.0]), 5, 0.5).unwrap();
+        let hits =
+            f.db.search_embeddings(&embed(vec![1.0, 0.0]), 5, 0.5)
+                .unwrap();
         assert_eq!(hits.len(), 1, "the opposite vector must be filtered out");
     }
 
@@ -884,27 +931,48 @@ mod tests {
         f.db.import_document("Doc", "s", "t", "h", &chunks).unwrap();
 
         for chunk in f.db.chunks_awaiting_embedding("test-embed", 100).unwrap() {
-            f.db.store_embedding(EmbeddingKind::KnowledgeChunk, &chunk.id, &embed(vec![1.0, 0.0]))
-                .unwrap();
+            f.db.store_embedding(
+                EmbeddingKind::KnowledgeChunk,
+                &chunk.id,
+                &embed(vec![1.0, 0.0]),
+            )
+            .unwrap();
         }
 
-        assert_eq!(f.db.search_embeddings(&embed(vec![1.0, 0.0]), 3, -1.0).unwrap().len(), 3);
+        assert_eq!(
+            f.db.search_embeddings(&embed(vec![1.0, 0.0]), 3, -1.0)
+                .unwrap()
+                .len(),
+            3
+        );
     }
 
     #[test]
     fn an_empty_index_returns_no_hits_rather_than_failing() {
         let f = fixture();
-        assert!(f.db.search_embeddings(&embed(vec![1.0]), 5, 0.0).unwrap().is_empty());
+        assert!(f
+            .db
+            .search_embeddings(&embed(vec![1.0]), 5, 0.0)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
     fn an_orphaned_vector_is_skipped_rather_than_cited() {
         // Nothing useful can be quoted from a vector whose subject is gone.
         let f = fixture();
-        f.db.store_embedding(EmbeddingKind::KnowledgeChunk, "ghost", &embed(vec![1.0, 0.0]))
-            .unwrap();
+        f.db.store_embedding(
+            EmbeddingKind::KnowledgeChunk,
+            "ghost",
+            &embed(vec![1.0, 0.0]),
+        )
+        .unwrap();
 
-        assert!(f.db.search_embeddings(&embed(vec![1.0, 0.0]), 5, -1.0).unwrap().is_empty());
+        assert!(f
+            .db
+            .search_embeddings(&embed(vec![1.0, 0.0]), 5, -1.0)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -920,8 +988,12 @@ mod tests {
         .unwrap();
         let chunks = f.db.chunks_awaiting_embedding("test-embed", 10).unwrap();
 
-        f.db.store_embedding(EmbeddingKind::KnowledgeChunk, &chunks[0].id, &embed(vec![1.0, 0.0]))
-            .unwrap();
+        f.db.store_embedding(
+            EmbeddingKind::KnowledgeChunk,
+            &chunks[0].id,
+            &embed(vec![1.0, 0.0]),
+        )
+        .unwrap();
 
         // A truncated blob on the second chunk, as a partial write might leave.
         f.db.conn()
@@ -932,7 +1004,9 @@ mod tests {
             )
             .unwrap();
 
-        let hits = f.db.search_embeddings(&embed(vec![1.0, 0.0]), 5, -1.0).unwrap();
+        let hits =
+            f.db.search_embeddings(&embed(vec![1.0, 0.0]), 5, -1.0)
+                .unwrap();
         assert_eq!(hits.len(), 1, "the good vector is still returned");
         assert_eq!(hits[0].content, "good");
     }

@@ -302,11 +302,10 @@ impl Database {
 
         // Allocated inside the transaction, so a crash cannot leave a gap or
         // reuse a sequence number.
-        let highest: Option<i64> = transaction.query_row(
-            "SELECT max(sequence) FROM peer_trust_events",
-            [],
-            |row| row.get(0),
-        )?;
+        let highest: Option<i64> =
+            transaction.query_row("SELECT max(sequence) FROM peer_trust_events", [], |row| {
+                row.get(0)
+            })?;
         let sequence = highest.unwrap_or(0).max(0) as u64 + 1;
 
         let signature = identity.sign(&trust_signing_bytes(
@@ -531,10 +530,9 @@ mod tests {
         let f = fixture();
         register_peer(&f);
 
-        let state = f
-            .db
-            .record_enrollment_request(&f.identity, PEER, "SM-BBBBB", &[])
-            .unwrap();
+        let state =
+            f.db.record_enrollment_request(&f.identity, PEER, "SM-BBBBB", &[])
+                .unwrap();
 
         assert_eq!(state, TrustState::Pending);
         assert!(!state.permits_authorized_operations());
@@ -563,7 +561,9 @@ mod tests {
         f.db.record_enrollment_request(&f.identity, PEER, "SM-BBBBB", &[])
             .unwrap();
 
-        let state = f.db.approve_peer(&f.identity, PEER, Some("field team")).unwrap();
+        let state =
+            f.db.approve_peer(&f.identity, PEER, Some("field team"))
+                .unwrap();
 
         assert_eq!(state, TrustState::Trusted);
         assert!(state.permits_authorized_operations());
@@ -591,10 +591,9 @@ mod tests {
     #[test]
     fn the_local_node_cannot_have_its_own_authorization_changed() {
         let f = fixture();
-        let err = f
-            .db
-            .revoke_peer(&f.identity, f.identity.node_id(), None)
-            .unwrap_err();
+        let err =
+            f.db.revoke_peer(&f.identity, f.identity.node_id(), None)
+                .unwrap_err();
         assert_eq!(err.code(), "VALIDATION_ERROR");
     }
 
@@ -606,7 +605,9 @@ mod tests {
         register_peer(&f);
         f.db.approve_peer(&f.identity, PEER, None).unwrap();
 
-        let state = f.db.revoke_peer(&f.identity, PEER, Some("device lost")).unwrap();
+        let state =
+            f.db.revoke_peer(&f.identity, PEER, Some("device lost"))
+                .unwrap();
 
         assert_eq!(state, TrustState::Revoked);
         assert!(!state.permits_authorized_operations());
@@ -646,10 +647,9 @@ mod tests {
         f.db.revoke_peer(&f.identity, PEER, None).unwrap();
 
         // Reconnecting and re-presenting must not launder the denial away.
-        let state = f
-            .db
-            .record_enrollment_request(&f.identity, PEER, "SM-BBBBB", &[])
-            .unwrap();
+        let state =
+            f.db.record_enrollment_request(&f.identity, PEER, "SM-BBBBB", &[])
+                .unwrap();
 
         assert_eq!(state, TrustState::Revoked);
     }
@@ -674,7 +674,9 @@ mod tests {
         f.db.approve_peer(&f.identity, PEER, None).unwrap();
         f.db.revoke_peer(&f.identity, PEER, None).unwrap();
 
-        let state = f.db.approve_peer(&f.identity, PEER, Some("recovered")).unwrap();
+        let state =
+            f.db.approve_peer(&f.identity, PEER, Some("recovered"))
+                .unwrap();
         assert_eq!(state, TrustState::Trusted);
 
         let log = f.db.trust_audit_log(Some(PEER), 100).unwrap();
@@ -688,7 +690,9 @@ mod tests {
         f.db.record_enrollment_request(&f.identity, PEER, "SM-BBBBB", &[])
             .unwrap();
 
-        let state = f.db.reject_peer(&f.identity, PEER, Some("not recognised")).unwrap();
+        let state =
+            f.db.reject_peer(&f.identity, PEER, Some("not recognised"))
+                .unwrap();
         assert_eq!(state, TrustState::Revoked);
 
         let log = f.db.trust_audit_log(Some(PEER), 100).unwrap();
@@ -731,7 +735,8 @@ mod tests {
         register_peer(&f);
         f.db.record_enrollment_request(&f.identity, PEER, "SM-BBBBB", &[])
             .unwrap();
-        f.db.approve_peer(&f.identity, PEER, Some("verified in person")).unwrap();
+        f.db.approve_peer(&f.identity, PEER, Some("verified in person"))
+            .unwrap();
 
         let log = f.db.trust_audit_log(Some(PEER), 100).unwrap();
         assert_eq!(log.len(), 2);
@@ -814,7 +819,10 @@ mod tests {
 
     #[test]
     fn trust_signing_is_domain_separated_from_the_other_signing_contexts() {
-        assert_ne!(TRUST_SIGNING_DOMAIN, crate::domain::event::EVENT_SIGNING_DOMAIN);
+        assert_ne!(
+            TRUST_SIGNING_DOMAIN,
+            crate::domain::event::EVENT_SIGNING_DOMAIN
+        );
         assert_ne!(
             TRUST_SIGNING_DOMAIN,
             crate::networking::protocol::ENVELOPE_SIGNING_DOMAIN

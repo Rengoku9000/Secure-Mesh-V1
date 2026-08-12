@@ -135,11 +135,7 @@ mod tests {
         trusted_peer(state, equivocating, TrustState::Trusted)
     }
 
-    fn trusted_peer(
-        state: ConnectionState,
-        equivocating: bool,
-        trust_state: TrustState,
-    ) -> Peer {
+    fn trusted_peer(state: ConnectionState, equivocating: bool, trust_state: TrustState) -> Peer {
         Peer {
             trust_state,
             role: PeerRole::Node,
@@ -196,7 +192,11 @@ mod tests {
 
     #[test]
     fn an_unauthorized_peer_never_replicates_however_reachable_it_is() {
-        for state in [TrustState::Unknown, TrustState::Pending, TrustState::Revoked] {
+        for state in [
+            TrustState::Unknown,
+            TrustState::Pending,
+            TrustState::Revoked,
+        ] {
             let peer = trusted_peer(ConnectionState::Connected, false, state);
             assert!(
                 !peer.is_replicating(),
@@ -207,9 +207,15 @@ mod tests {
 
     #[test]
     fn only_a_pending_peer_awaits_a_decision() {
-        assert!(trusted_peer(ConnectionState::Connected, false, TrustState::Pending)
-            .awaiting_decision());
-        for state in [TrustState::Unknown, TrustState::Trusted, TrustState::Revoked] {
+        assert!(
+            trusted_peer(ConnectionState::Connected, false, TrustState::Pending)
+                .awaiting_decision()
+        );
+        for state in [
+            TrustState::Unknown,
+            TrustState::Trusted,
+            TrustState::Revoked,
+        ] {
             assert!(!trusted_peer(ConnectionState::Connected, false, state).awaiting_decision());
         }
     }

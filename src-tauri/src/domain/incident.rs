@@ -195,9 +195,7 @@ impl NewIncident {
             (None, None) => (None, None),
             (Some(lat), Some(lon)) => {
                 if !lat.is_finite() || !lon.is_finite() {
-                    return Err(CoreError::validation(
-                        "coordinates must be finite numbers",
-                    ));
+                    return Err(CoreError::validation("coordinates must be finite numbers"));
                 }
                 if !(-90.0..=90.0).contains(&lat) {
                     return Err(CoreError::validation(
@@ -426,7 +424,9 @@ mod tests {
 
     #[test]
     fn control_characters_in_descriptions_do_not_panic() {
-        let incident = input("line1\nline2\u{0}\u{7}", "LOW").validate(NODE).unwrap();
+        let incident = input("line1\nline2\u{0}\u{7}", "LOW")
+            .validate(NODE)
+            .unwrap();
         assert!(incident.description.contains("line1"));
     }
 }

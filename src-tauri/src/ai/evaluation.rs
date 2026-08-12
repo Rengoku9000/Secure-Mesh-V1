@@ -263,15 +263,17 @@ pub fn evaluate_retrieval(
         // out-of-range marker written into the prose.
         let cited_markers = crate::ai::rag::extract_citations(&answer.answer, usize::MAX);
         let real = answer.sources.len();
-        results.invented_citations += answer.dropped_citations
-            + cited_markers.iter().filter(|m| **m > real).count();
+        results.invented_citations +=
+            answer.dropped_citations + cited_markers.iter().filter(|m| **m > real).count();
 
         if question.expect_refusal {
             results.unanswerable_asked += 1;
             if answer.refused || !answer.grounded {
                 results.correctly_refused += 1;
             } else {
-                results.answered_unanswerable.push(question.question.clone());
+                results
+                    .answered_unanswerable
+                    .push(question.question.clone());
             }
         } else {
             results.answerable_asked += 1;
@@ -369,7 +371,9 @@ pub fn run_benchmark(
             break;
         }
     }
-    notes.push(format!("{indexed} items embedded before retrieval was measured"));
+    notes.push(format!(
+        "{indexed} items embedded before retrieval was measured"
+    ));
 
     let model = generator.model_info();
 
@@ -382,7 +386,10 @@ pub fn run_benchmark(
             .as_ref()
             .map(|m| m.quantisation.clone())
             .unwrap_or_default(),
-        backend: model.as_ref().map(|m| m.backend.clone()).unwrap_or_default(),
+        backend: model
+            .as_ref()
+            .map(|m| m.backend.clone())
+            .unwrap_or_default(),
         embedding_model: embedder.model_id(),
         hardware: hardware.to_string(),
         prompt_version: PROMPT_VERSION.to_string(),

@@ -305,13 +305,13 @@ impl MeshEvent {
     /// first so a malformed event is rejected before any signature arithmetic.
     pub fn verify(&self) -> CoreResult<()> {
         if self.origin_seq == 0 {
-            return Err(CoreError::validation(
-                "event sequence numbers start at 1",
-            ));
+            return Err(CoreError::validation("event sequence numbers start at 1"));
         }
         if self.origin_seq > i64::MAX as u64 {
             // SQLite stores integers as i64; anything larger cannot round-trip.
-            return Err(CoreError::validation("event sequence number is out of range"));
+            return Err(CoreError::validation(
+                "event sequence number is out of range",
+            ));
         }
         if self.payload.len() > MAX_PAYLOAD_BYTES {
             return Err(CoreError::validation("event payload is too large"));
@@ -323,7 +323,9 @@ impl MeshEvent {
         let key_bytes = hex::decode(&self.origin_public_key)
             .map_err(|_| CoreError::validation("origin public key is not valid hex"))?;
         if key_bytes.len() != 32 {
-            return Err(CoreError::validation("origin public key has a wrong length"));
+            return Err(CoreError::validation(
+                "origin public key has a wrong length",
+            ));
         }
 
         // The claimed identity must match the key that will verify the
@@ -361,7 +363,9 @@ impl MeshEvent {
     /// Parses the payload of an `INCIDENT_OBSERVATION` event.
     pub fn incident_observation_payload(&self) -> CoreResult<IncidentObservationPayload> {
         if self.kind != EventKind::IncidentObservation {
-            return Err(CoreError::validation("event is not an incident observation"));
+            return Err(CoreError::validation(
+                "event is not an incident observation",
+            ));
         }
         Ok(serde_json::from_str(&self.payload)?)
     }
@@ -537,12 +541,7 @@ mod tests {
             longitude: None,
         };
 
-        let result = MeshEvent::create(
-            &identity(&dir),
-            1,
-            EventKind::IncidentCreated,
-            oversized,
-        );
+        let result = MeshEvent::create(&identity(&dir), 1, EventKind::IncidentCreated, oversized);
         assert!(result.is_err());
     }
 
@@ -551,24 +550,8 @@ mod tests {
     #[test]
     fn length_prefixing_prevents_field_boundary_confusion() {
         // Without length prefixes these two would serialise identically.
-        let first = canonical_bytes(
-            "ab",
-            "c",
-            "k",
-            1,
-            EventKind::IncidentCreated,
-            "p",
-            "t",
-        );
-        let second = canonical_bytes(
-            "a",
-            "bc",
-            "k",
-            1,
-            EventKind::IncidentCreated,
-            "p",
-            "t",
-        );
+        let first = canonical_bytes("ab", "c", "k", 1, EventKind::IncidentCreated, "p", "t");
+        let second = canonical_bytes("a", "bc", "k", 1, EventKind::IncidentCreated, "p", "t");
         assert_ne!(first, second);
     }
 
@@ -598,10 +581,8 @@ mod tests {
 
         // The same node signing two different events at sequence 1 is exactly
         // the equivocation the sync engine must detect.
-        let first =
-            MeshEvent::create(&signer, 1, EventKind::IncidentCreated, payload()).unwrap();
-        let second =
-            MeshEvent::create(&signer, 1, EventKind::IncidentCreated, payload()).unwrap();
+        let first = MeshEvent::create(&signer, 1, EventKind::IncidentCreated, payload()).unwrap();
+        let second = MeshEvent::create(&signer, 1, EventKind::IncidentCreated, payload()).unwrap();
 
         assert_eq!(first.origin_node, second.origin_node);
         assert_eq!(first.origin_seq, second.origin_seq);

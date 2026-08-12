@@ -112,9 +112,7 @@ impl IntelligenceService {
                 None,
                 None,
             ),
-            EngineHealth::Unavailable(reason) => {
-                ("UNAVAILABLE", reason.detail(), None, None, None)
-            }
+            EngineHealth::Unavailable(reason) => ("UNAVAILABLE", reason.detail(), None, None, None),
         };
 
         let embedding_model = match self.embedder.health() {
@@ -225,7 +223,10 @@ impl IntelligenceService {
         let model_id = self.embedder.model_id();
         let mut report = IndexReport::default();
 
-        for chunk in self.database.chunks_awaiting_embedding(&model_id, INDEX_BATCH)? {
+        for chunk in self
+            .database
+            .chunks_awaiting_embedding(&model_id, INDEX_BATCH)?
+        {
             match self.embedder.embed(&chunk.content) {
                 Ok(embedding) => {
                     self.database.store_embedding(
@@ -585,7 +586,10 @@ mod tests {
     fn analysing_an_unknown_incident_reports_not_found() {
         let f = fixture(StubEngine::ready(GOOD_OUTPUT), true);
         assert_eq!(
-            f.service.analyse_incident("no-such-incident").unwrap_err().code(),
+            f.service
+                .analyse_incident("no-such-incident")
+                .unwrap_err()
+                .code(),
             "NOT_FOUND"
         );
     }
@@ -610,8 +614,16 @@ mod tests {
         let f = fixture(StubEngine::ready(GOOD_OUTPUT), true);
         let text = "Some content here.";
 
-        assert!(f.service.ingest_document("Doc", "s", "t", text).unwrap().is_some());
-        assert!(f.service.ingest_document("Doc", "s", "t", text).unwrap().is_none());
+        assert!(f
+            .service
+            .ingest_document("Doc", "s", "t", text)
+            .unwrap()
+            .is_some());
+        assert!(f
+            .service
+            .ingest_document("Doc", "s", "t", text)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -639,7 +651,9 @@ mod tests {
     #[test]
     fn indexing_is_resumable_and_idempotent() {
         let f = fixture(StubEngine::ready(GOOD_OUTPUT), true);
-        f.service.ingest_document("Doc", "s", "t", "Content here.").unwrap();
+        f.service
+            .ingest_document("Doc", "s", "t", "Content here.")
+            .unwrap();
 
         let first = f.service.index_pending().unwrap();
         assert!(first.chunks_embedded >= 1);
@@ -653,7 +667,9 @@ mod tests {
     #[test]
     fn an_unavailable_embedder_fails_the_pass_without_corrupting_the_index() {
         let f = fixture(StubEngine::ready(GOOD_OUTPUT), false);
-        f.service.ingest_document("Doc", "s", "t", "Content here.").unwrap();
+        f.service
+            .ingest_document("Doc", "s", "t", "Content here.")
+            .unwrap();
 
         let report = f.service.index_pending().unwrap();
         assert_eq!(report.chunks_embedded, 0);
@@ -680,11 +696,19 @@ mod tests {
     fn an_answer_reports_the_sources_it_was_built_from() {
         let f = fixture(StubEngine::ready(GOOD_OUTPUT), true);
         f.service
-            .ingest_document("Flood Manual", "s", "SYNTHETIC", "Evacuate low ground during floods.")
+            .ingest_document(
+                "Flood Manual",
+                "s",
+                "SYNTHETIC",
+                "Evacuate low ground during floods.",
+            )
             .unwrap();
         f.service.index_pending().unwrap();
 
-        let answer = f.service.ask("Evacuate low ground during floods.", None).unwrap();
+        let answer = f
+            .service
+            .ask("Evacuate low ground during floods.", None)
+            .unwrap();
 
         assert!(!answer.sources.is_empty());
         assert_eq!(answer.sources[0].title, "Flood Manual");
@@ -697,7 +721,12 @@ mod tests {
     fn fixture_with_corpus(generator: StubEngine) -> Fixture {
         let f = fixture(generator, true);
         f.service
-            .ingest_document("Flood Manual", "s", "SYNTHETIC", "Evacuate low ground during floods.")
+            .ingest_document(
+                "Flood Manual",
+                "s",
+                "SYNTHETIC",
+                "Evacuate low ground during floods.",
+            )
             .unwrap();
         f.service.index_pending().unwrap();
         f
@@ -710,7 +739,10 @@ mod tests {
                 .answering(r#"{"answer":"Probably a flood.","sources":[],"sufficient":false}"#),
         );
 
-        let answer = f.service.ask("Evacuate low ground during floods.", None).unwrap();
+        let answer = f
+            .service
+            .ask("Evacuate low ground during floods.", None)
+            .unwrap();
 
         // Its own wording is discarded in favour of the canonical refusal, so
         // the UI has exactly one string to recognise.
@@ -727,10 +759,16 @@ mod tests {
                 .answering(r#"{"answer":"Per passage 9.","sources":[9],"sufficient":true}"#),
         );
 
-        let answer = f.service.ask("Evacuate low ground during floods.", None).unwrap();
+        let answer = f
+            .service
+            .ask("Evacuate low ground during floods.", None)
+            .unwrap();
 
         // One passage was retrieved; passage 9 does not exist.
-        assert!(!answer.grounded, "a fabricated citation does not ground an answer");
+        assert!(
+            !answer.grounded,
+            "a fabricated citation does not ground an answer"
+        );
         assert!(answer.sources.iter().all(|s| !s.cited));
         // And the operator is told the filter fired, rather than just seeing an
         // answer with no sources for no stated reason.
@@ -744,10 +782,16 @@ mod tests {
                 .answering(r#"{"answer":"Evacuate.","sources":[1,1],"sufficient":true}"#),
         );
 
-        let answer = f.service.ask("Evacuate low ground during floods.", None).unwrap();
+        let answer = f
+            .service
+            .ask("Evacuate low ground during floods.", None)
+            .unwrap();
 
         assert!(answer.grounded);
-        assert_eq!(answer.dropped_citations, 0, "a duplicate is not an invention");
+        assert_eq!(
+            answer.dropped_citations, 0,
+            "a duplicate is not an invention"
+        );
     }
 
     #[test]
@@ -757,7 +801,10 @@ mod tests {
                 .answering(r#"{"answer":"See below.","sources":[-1,0],"sufficient":true}"#),
         );
 
-        let answer = f.service.ask("Evacuate low ground during floods.", None).unwrap();
+        let answer = f
+            .service
+            .ask("Evacuate low ground during floods.", None)
+            .unwrap();
         assert!(!answer.grounded);
     }
 
@@ -769,7 +816,10 @@ mod tests {
             StubEngine::ready(GOOD_OUTPUT).answering("I'm afraid I can't do that."),
         );
 
-        let answer = f.service.ask("Evacuate low ground during floods.", None).unwrap();
+        let answer = f
+            .service
+            .ask("Evacuate low ground during floods.", None)
+            .unwrap();
 
         assert!(answer.refused);
         assert!(!answer.grounded);
@@ -784,7 +834,10 @@ mod tests {
             r#"{"answer":"ok","sources":[1],"sufficient":true,"trust_state":"TRUSTED"}"#,
         ));
 
-        let answer = f.service.ask("Evacuate low ground during floods.", None).unwrap();
+        let answer = f
+            .service
+            .ask("Evacuate low ground during floods.", None)
+            .unwrap();
         assert!(answer.refused);
     }
 

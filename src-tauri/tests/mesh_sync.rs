@@ -1,4 +1,4 @@
-﻿//! Distributed-systems behaviour of the SecureMesh mesh.
+//! Distributed-systems behaviour of the SecureMesh mesh.
 //!
 //! These tests run complete `NodeRuntime`s over the deterministic loopback
 //! transport. That is a real [`MeshTransport`] implementation, so the code
@@ -144,7 +144,9 @@ fn two_nodes_converge_after_connecting() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    a.runtime.create_incident(incident("Bridge collapsed", "HIGH")).unwrap();
+    a.runtime
+        .create_incident(incident("Bridge collapsed", "HIGH"))
+        .unwrap();
 
     connect_and_enroll(&network, &a, &b);
 
@@ -158,8 +160,12 @@ fn replication_is_bidirectional() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    a.runtime.create_incident(incident("from A", "LOW")).unwrap();
-    b.runtime.create_incident(incident("from B", "HIGH")).unwrap();
+    a.runtime
+        .create_incident(incident("from A", "LOW"))
+        .unwrap();
+    b.runtime
+        .create_incident(incident("from B", "HIGH"))
+        .unwrap();
 
     connect_and_enroll(&network, &a, &b);
 
@@ -174,7 +180,9 @@ fn a_replicated_incident_keeps_its_original_author() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    a.runtime.create_incident(incident("authored by A", "HIGH")).unwrap();
+    a.runtime
+        .create_incident(incident("authored by A", "HIGH"))
+        .unwrap();
     connect_and_enroll(&network, &a, &b);
 
     let replicated = &b.runtime.list_incidents(None).unwrap()[0];
@@ -192,7 +200,9 @@ fn events_created_after_connecting_still_replicate() {
 
     // No new PeerConnected event will fire, so this exercises the periodic
     // re-sync rather than the on-connect path.
-    a.runtime.create_incident(incident("created later", "MEDIUM")).unwrap();
+    a.runtime
+        .create_incident(incident("created later", "MEDIUM"))
+        .unwrap();
     a.runtime.request_sync().unwrap();
     settle(&[&a, &b]);
 
@@ -205,8 +215,13 @@ fn observations_replicate_alongside_incidents() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    let created = a.runtime.create_incident(incident("Initial sighting", "LOW")).unwrap();
-    a.runtime.add_observation(&created.id, "Situation worsening").unwrap();
+    let created = a
+        .runtime
+        .create_incident(incident("Initial sighting", "LOW"))
+        .unwrap();
+    a.runtime
+        .add_observation(&created.id, "Situation worsening")
+        .unwrap();
 
     connect_and_enroll(&network, &a, &b);
 
@@ -233,8 +248,12 @@ fn incidents_created_during_a_partition_merge_on_reconnect() {
     settle(&[&a, &b]);
 
     // Both sides keep working, independently and offline.
-    a.runtime.create_incident(incident("INC-A", "HIGH")).unwrap();
-    b.runtime.create_incident(incident("INC-B", "CRITICAL")).unwrap();
+    a.runtime
+        .create_incident(incident("INC-A", "HIGH"))
+        .unwrap();
+    b.runtime
+        .create_incident(incident("INC-B", "CRITICAL"))
+        .unwrap();
 
     assert_eq!(a.incidents(), vec!["INC-A".to_string()]);
     assert_eq!(b.incidents(), vec!["INC-B".to_string()]);
@@ -257,10 +276,14 @@ fn a_long_partition_with_many_events_reconciles_fully() {
     let b = spawn(&network);
 
     for n in 0..25 {
-        a.runtime.create_incident(incident(&format!("A-{n:02}"), "LOW")).unwrap();
+        a.runtime
+            .create_incident(incident(&format!("A-{n:02}"), "LOW"))
+            .unwrap();
     }
     for n in 0..15 {
-        b.runtime.create_incident(incident(&format!("B-{n:02}"), "LOW")).unwrap();
+        b.runtime
+            .create_incident(incident(&format!("B-{n:02}"), "LOW"))
+            .unwrap();
     }
 
     connect_and_enroll(&network, &a, &b);
@@ -278,8 +301,12 @@ fn concurrent_creation_produces_no_conflicts() {
 
     // Same wall-clock moment, both partitioned: the case a timestamp-ordered
     // design would resolve by discarding one side.
-    a.runtime.create_incident(incident("simultaneous A", "HIGH")).unwrap();
-    b.runtime.create_incident(incident("simultaneous B", "HIGH")).unwrap();
+    a.runtime
+        .create_incident(incident("simultaneous A", "HIGH"))
+        .unwrap();
+    b.runtime
+        .create_incident(incident("simultaneous B", "HIGH"))
+        .unwrap();
 
     connect_and_enroll(&network, &a, &b);
 
@@ -300,7 +327,9 @@ fn offline_scenario_disconnect_create_restart_reconnect() {
     let b = spawn(&network);
 
     // 1. Enroll, connect, and synchronise a first incident.
-    a.runtime.create_incident(incident("before disconnect", "MEDIUM")).unwrap();
+    a.runtime
+        .create_incident(incident("before disconnect", "MEDIUM"))
+        .unwrap();
     connect_and_enroll(&network, &a, &b);
     assert_eq!(b.incidents(), vec!["before disconnect".to_string()]);
 
@@ -309,8 +338,12 @@ fn offline_scenario_disconnect_create_restart_reconnect() {
     settle(&[&a, &b]);
 
     // 3. A keeps recording while alone.
-    a.runtime.create_incident(incident("while alone 1", "HIGH")).unwrap();
-    a.runtime.create_incident(incident("while alone 2", "CRITICAL")).unwrap();
+    a.runtime
+        .create_incident(incident("while alone 1", "HIGH"))
+        .unwrap();
+    a.runtime
+        .create_incident(incident("while alone 2", "CRITICAL"))
+        .unwrap();
 
     // 4. A restarts.
     let a = restart(&network, a);
@@ -339,7 +372,9 @@ fn a_node_restarted_mid_sync_resumes_without_loss() {
     let b = spawn(&network);
 
     for n in 0..10 {
-        a.runtime.create_incident(incident(&format!("event {n}"), "LOW")).unwrap();
+        a.runtime
+            .create_incident(incident(&format!("event {n}"), "LOW"))
+            .unwrap();
     }
 
     connect_and_enroll(&network, &a, &b);
@@ -369,7 +404,9 @@ fn repeated_synchronisation_changes_nothing() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    a.runtime.create_incident(incident("sync me", "LOW")).unwrap();
+    a.runtime
+        .create_incident(incident("sync me", "LOW"))
+        .unwrap();
     connect_and_enroll(&network, &a, &b);
 
     let before = b.event_count();
@@ -391,11 +428,17 @@ fn duplicate_delivery_of_the_same_batch_is_idempotent() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    a.runtime.create_incident(incident("delivered twice", "LOW")).unwrap();
+    a.runtime
+        .create_incident(incident("delivered twice", "LOW"))
+        .unwrap();
     connect_and_enroll(&network, &a, &b);
 
     // Replay A's whole log at B, several times over.
-    let events = a.runtime.database().events_since(&a.node_id, 0, 100).unwrap();
+    let events = a
+        .runtime
+        .database()
+        .events_since(&a.node_id, 0, 100)
+        .unwrap();
     let identity =
         NodeIdentity::load_or_create(&FileKeyStore::new(a.dir.path().join(KEYSTORE_FILE))).unwrap();
     let envelope = Envelope::create(
@@ -431,7 +474,9 @@ fn out_of_order_arrival_still_converges() {
     let b = spawn(&network);
 
     for n in 0..5 {
-        a.runtime.create_incident(incident(&format!("ordered {n}"), "LOW")).unwrap();
+        a.runtime
+            .create_incident(incident(&format!("ordered {n}"), "LOW"))
+            .unwrap();
     }
 
     // Enroll first: this test is about ordering, so A has to be authorized or
@@ -440,7 +485,11 @@ fn out_of_order_arrival_still_converges() {
 
     let identity =
         NodeIdentity::load_or_create(&FileKeyStore::new(a.dir.path().join(KEYSTORE_FILE))).unwrap();
-    let mut events = a.runtime.database().events_since(&a.node_id, 0, 100).unwrap();
+    let mut events = a
+        .runtime
+        .database()
+        .events_since(&a.node_id, 0, 100)
+        .unwrap();
     events.reverse();
 
     let sender = PeerDescriptor {
@@ -489,11 +538,13 @@ fn a_message_signed_by_someone_other_than_the_sender_is_refused() {
     settle(&[&a, &b, &impostor]);
 
     // The impostor signs a batch but it is delivered as though it came from A.
-    let impostor_identity = NodeIdentity::load_or_create(&FileKeyStore::new(
-        impostor.dir.path().join(KEYSTORE_FILE),
-    ))
-    .unwrap();
-    impostor.runtime.create_incident(incident("forged", "CRITICAL")).unwrap();
+    let impostor_identity =
+        NodeIdentity::load_or_create(&FileKeyStore::new(impostor.dir.path().join(KEYSTORE_FILE)))
+            .unwrap();
+    impostor
+        .runtime
+        .create_incident(incident("forged", "CRITICAL"))
+        .unwrap();
     let events = impostor
         .runtime
         .database()
@@ -522,7 +573,10 @@ fn a_message_signed_by_someone_other_than_the_sender_is_refused() {
     injector.redeliver(&b.node_id, &spoofed_sender, envelope);
 
     let report = b.runtime.sync_tick().unwrap();
-    assert_eq!(report.messages_rejected, 1, "sender mismatch must be refused");
+    assert_eq!(
+        report.messages_rejected, 1,
+        "sender mismatch must be refused"
+    );
     assert_eq!(b.event_count(), 0);
 }
 
@@ -532,7 +586,9 @@ fn a_tampered_event_inside_a_valid_envelope_is_refused() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    a.runtime.create_incident(incident("genuine", "LOW")).unwrap();
+    a.runtime
+        .create_incident(incident("genuine", "LOW"))
+        .unwrap();
 
     // A is fully authorized, so the rejection below is attributable to the
     // tampering rather than to a missing enrollment. Authorization does not
@@ -541,7 +597,11 @@ fn a_tampered_event_inside_a_valid_envelope_is_refused() {
     connect_and_enroll(&network, &a, &b);
     let baseline = b.event_count();
 
-    let mut events = a.runtime.database().events_since(&a.node_id, 0, 10).unwrap();
+    let mut events = a
+        .runtime
+        .database()
+        .events_since(&a.node_id, 0, 10)
+        .unwrap();
     events[0].payload = events[0].payload.replace("genuine", "tampered");
 
     let identity =
@@ -567,7 +627,11 @@ fn a_tampered_event_inside_a_valid_envelope_is_refused() {
     let report = b.runtime.sync_tick().unwrap();
     assert_eq!(report.events_rejected, 1);
     assert_eq!(report.events_applied, 0);
-    assert_eq!(b.event_count(), baseline, "the tampered event was not stored");
+    assert_eq!(
+        b.event_count(),
+        baseline,
+        "the tampered event was not stored"
+    );
 }
 
 #[test]
@@ -593,7 +657,9 @@ fn an_unsupported_protocol_version_is_refused_without_crashing() {
     assert_eq!(report.messages_rejected, 1);
 
     // The node keeps working afterwards.
-    b.runtime.create_incident(incident("still alive", "LOW")).unwrap();
+    b.runtime
+        .create_incident(incident("still alive", "LOW"))
+        .unwrap();
     assert_eq!(b.incidents(), vec!["still alive".to_string()]);
 }
 
@@ -624,7 +690,9 @@ fn a_flood_of_malformed_messages_does_not_disturb_the_node() {
     assert_eq!(b.event_count(), 0);
 
     // Legitimate traffic still works immediately afterwards.
-    a.runtime.create_incident(incident("after the flood", "LOW")).unwrap();
+    a.runtime
+        .create_incident(incident("after the flood", "LOW"))
+        .unwrap();
     connect_and_enroll(&network, &a, &b);
     assert_eq!(b.incidents(), vec!["after the flood".to_string()]);
 }
@@ -635,7 +703,9 @@ fn equivocation_by_a_peer_is_detected_and_nothing_is_overwritten() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    a.runtime.create_incident(incident("the real event", "LOW")).unwrap();
+    a.runtime
+        .create_incident(incident("the real event", "LOW"))
+        .unwrap();
     connect_and_enroll(&network, &a, &b);
     assert_eq!(b.incidents(), vec!["the real event".to_string()]);
 
@@ -697,7 +767,9 @@ fn events_relay_through_an_intermediate_node() {
     connect_and_enroll(&network, &a, &b);
     connect_and_enroll(&network, &b, &c);
 
-    a.runtime.create_incident(incident("originated at A", "HIGH")).unwrap();
+    a.runtime
+        .create_incident(incident("originated at A", "HIGH"))
+        .unwrap();
     settle(&[&a, &b, &c]);
     a.runtime.request_sync().unwrap();
     b.runtime.request_sync().unwrap();
@@ -730,7 +802,11 @@ fn a_three_node_mesh_converges_from_a_full_partition() {
     }
     settle(&[&a, &b, &c]);
 
-    let expected = vec!["INC-A".to_string(), "INC-B".to_string(), "INC-C".to_string()];
+    let expected = vec![
+        "INC-A".to_string(),
+        "INC-B".to_string(),
+        "INC-C".to_string(),
+    ];
     assert_eq!(a.incidents(), expected);
     assert_eq!(b.incidents(), expected);
     assert_eq!(c.incidents(), expected);
@@ -776,7 +852,10 @@ fn a_synchronised_incident_stops_being_pending() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    let created = a.runtime.create_incident(incident("track my status", "LOW")).unwrap();
+    let created = a
+        .runtime
+        .create_incident(incident("track my status", "LOW"))
+        .unwrap();
     assert_eq!(created.sync_status, SyncStatus::Pending);
     assert_eq!(a.runtime.network_status().unwrap().pending_sync, 1);
 
@@ -797,16 +876,24 @@ fn pending_counts_survive_a_restart() {
 
     connect_and_enroll(&network, &a, &b);
 
-    a.runtime.create_incident(incident("queued for B", "LOW")).unwrap();
+    a.runtime
+        .create_incident(incident("queued for B", "LOW"))
+        .unwrap();
     assert_eq!(
-        a.runtime.database().pending_events_for_peer(&b.node_id).unwrap(),
+        a.runtime
+            .database()
+            .pending_events_for_peer(&b.node_id)
+            .unwrap(),
         1
     );
 
     // The store-and-forward state is durable, not held in memory.
     let a = restart(&network, a);
     assert_eq!(
-        a.runtime.database().pending_events_for_peer(&b.node_id).unwrap(),
+        a.runtime
+            .database()
+            .pending_events_for_peer(&b.node_id)
+            .unwrap(),
         1
     );
 }
@@ -841,7 +928,8 @@ fn a_standalone_node_needs_no_mesh_to_function() {
     let dir = TempDir::new().unwrap();
     let node = NodeRuntime::initialize(dir.path()).unwrap();
 
-    node.create_incident(incident("no network at all", "HIGH")).unwrap();
+    node.create_incident(incident("no network at all", "HIGH"))
+        .unwrap();
 
     assert!(!node.mesh_attached());
     assert_eq!(node.list_incidents(None).unwrap().len(), 1);

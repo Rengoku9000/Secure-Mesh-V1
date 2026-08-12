@@ -91,8 +91,9 @@ impl Database {
     /// Fetches a single incident by ID.
     pub fn get_incident(&self, id: &str) -> CoreResult<Incident> {
         let conn = self.conn();
-        let mut statement =
-            conn.prepare(&format!("SELECT {SELECT_COLUMNS} FROM incidents WHERE id = ?1"))?;
+        let mut statement = conn.prepare(&format!(
+            "SELECT {SELECT_COLUMNS} FROM incidents WHERE id = ?1"
+        ))?;
 
         let row = statement
             .query_row(params![id], IncidentRow::from_row)
@@ -290,7 +291,9 @@ mod tests {
     #[test]
     fn a_missing_incident_reports_not_found() {
         let (_dir, db) = fixture();
-        let err = db.get_incident("00000000-0000-4000-8000-000000000000").unwrap_err();
+        let err = db
+            .get_incident("00000000-0000-4000-8000-000000000000")
+            .unwrap_err();
         assert_eq!(err.code(), "NOT_FOUND");
     }
 
@@ -341,16 +344,19 @@ mod tests {
     fn counts_reflect_stored_incidents() {
         let (_dir, db) = fixture();
         for n in 0..3 {
-            db.insert_incident(&incident(&format!("i{n}"), "LOW")).unwrap();
+            db.insert_incident(&incident(&format!("i{n}"), "LOW"))
+                .unwrap();
         }
 
         assert_eq!(db.count_incidents().unwrap(), 3);
         assert_eq!(
-            db.count_incidents_by_sync_status(SyncStatus::Pending).unwrap(),
+            db.count_incidents_by_sync_status(SyncStatus::Pending)
+                .unwrap(),
             3
         );
         assert_eq!(
-            db.count_incidents_by_sync_status(SyncStatus::Synced).unwrap(),
+            db.count_incidents_by_sync_status(SyncStatus::Synced)
+                .unwrap(),
             0
         );
     }

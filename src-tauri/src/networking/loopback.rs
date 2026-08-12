@@ -211,9 +211,9 @@ impl MeshTransport for LoopbackTransport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::networking::protocol::MessageBody;
     use crate::identity::keystore::FileKeyStore;
     use crate::identity::NodeIdentity;
+    use crate::networking::protocol::MessageBody;
     use tempfile::TempDir;
 
     fn node(dir: &TempDir) -> NodeIdentity {

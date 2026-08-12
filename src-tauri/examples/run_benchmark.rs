@@ -75,21 +75,40 @@ fn main() {
     .expect("benchmark failed");
 
     println!("=== SecureMesh Phase 3 benchmark ===");
-    println!("model            : {} ({})", report.model_id, report.quantisation);
+    println!(
+        "model            : {} ({})",
+        report.model_id, report.quantisation
+    );
     println!("backend          : {}", report.backend);
     println!("embedding model  : {}", report.embedding_model);
     println!("hardware         : {}", report.hardware);
     println!("prompt version   : {}", report.prompt_version);
-    println!("dataset          : {} seed {}", report.dataset_version, report.dataset_seed);
+    println!(
+        "dataset          : {} seed {}",
+        report.dataset_version, report.dataset_seed
+    );
     println!("corpus size      : {}", report.corpus_size);
 
     let extraction = &report.extraction;
     println!("\n--- extraction ---");
     println!("attempted        : {}", extraction.attempted);
-    println!("valid output     : {} ({:.1}%)", extraction.valid, extraction.valid_rate() * 100.0);
-    println!("category accuracy: {:.1}%", extraction.category_accuracy() * 100.0);
-    println!("severity accuracy: {:.1}%", extraction.severity_accuracy() * 100.0);
-    println!("keyword recall   : {:.1}%", extraction.keyword_recall * 100.0);
+    println!(
+        "valid output     : {} ({:.1}%)",
+        extraction.valid,
+        extraction.valid_rate() * 100.0
+    );
+    println!(
+        "category accuracy: {:.1}%",
+        extraction.category_accuracy() * 100.0
+    );
+    println!(
+        "severity accuracy: {:.1}%",
+        extraction.severity_accuracy() * 100.0
+    );
+    println!(
+        "keyword recall   : {:.1}%",
+        extraction.keyword_recall * 100.0
+    );
     println!(
         "latency ms       : mean {} median {} min {} max {}",
         extraction.latency.mean_ms,
@@ -102,7 +121,11 @@ fn main() {
     println!("\n--- retrieval and grounding ---");
     println!("answerable asked : {}", retrieval.answerable_asked);
     println!("retrieved context: {}", retrieval.retrieved_something);
-    println!("grounded answers : {} ({:.1}%)", retrieval.grounded, retrieval.grounding_rate() * 100.0);
+    println!(
+        "grounded answers : {} ({:.1}%)",
+        retrieval.grounded,
+        retrieval.grounding_rate() * 100.0
+    );
     println!("unanswerable     : {}", retrieval.unanswerable_asked);
     println!(
         "correctly refused: {} ({:.1}%)",

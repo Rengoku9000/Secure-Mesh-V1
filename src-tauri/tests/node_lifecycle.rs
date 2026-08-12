@@ -107,7 +107,9 @@ fn every_incident_is_attributed_to_the_node_that_authored_it() {
     let node = NodeRuntime::initialize(dir.path()).unwrap();
     let node_id = node.public_identity().node_id;
 
-    let created = node.create_incident(incident("Road blocked", "LOW")).unwrap();
+    let created = node
+        .create_incident(incident("Road blocked", "LOW"))
+        .unwrap();
     assert_eq!(created.created_by, node_id);
 
     // Fetching it individually agrees with the record returned on creation.
@@ -127,9 +129,15 @@ fn two_nodes_have_independent_identities_and_independent_data() {
     assert_ne!(id_a.node_id, id_b.node_id);
     assert_ne!(id_a.public_key, id_b.public_key);
 
-    node_a.create_incident(incident("Seen only by A", "HIGH")).unwrap();
-    node_b.create_incident(incident("Seen only by B", "LOW")).unwrap();
-    node_b.create_incident(incident("Also only by B", "LOW")).unwrap();
+    node_a
+        .create_incident(incident("Seen only by A", "HIGH"))
+        .unwrap();
+    node_b
+        .create_incident(incident("Seen only by B", "LOW"))
+        .unwrap();
+    node_b
+        .create_incident(incident("Also only by B", "LOW"))
+        .unwrap();
 
     // This is the Phase 1 baseline the Phase 2 sync engine will change: with
     // no transport, neither node knows anything about the other's records.
@@ -179,7 +187,8 @@ fn a_missing_incident_is_a_not_found_error_rather_than_a_panic() {
 fn the_private_key_never_appears_in_any_response_the_ui_can_request() {
     let dir = TempDir::new().unwrap();
     let node = NodeRuntime::initialize(dir.path()).unwrap();
-    node.create_incident(incident("routine report", "LOW")).unwrap();
+    node.create_incident(incident("routine report", "LOW"))
+        .unwrap();
 
     // Read the actual private key off disk.
     let keyfile = std::fs::read_to_string(dir.path().join("node_identity.json")).unwrap();

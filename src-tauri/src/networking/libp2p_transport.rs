@@ -163,8 +163,9 @@ impl Libp2pTransport {
     /// application start the transport *before* the runtime exists — the
     /// transport needs the key, and the runtime needs the transport.
     pub fn start_for_data_dir(data_dir: &std::path::Path) -> CoreResult<Self> {
-        let keystore =
-            crate::identity::keystore::FileKeyStore::new(data_dir.join(crate::runtime::KEYSTORE_FILE));
+        let keystore = crate::identity::keystore::FileKeyStore::new(
+            data_dir.join(crate::runtime::KEYSTORE_FILE),
+        );
         let identity = NodeIdentity::load_or_create(&keystore)?;
         Self::start(&identity)
     }
@@ -237,10 +238,8 @@ async fn run_swarm(
         .with_tokio()
         .with_quic()
         .with_behaviour(|key| {
-            let mdns = mdns::tokio::Behaviour::new(
-                mdns::Config::default(),
-                key.public().to_peer_id(),
-            )?;
+            let mdns =
+                mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?;
 
             let sync = request_response::cbor::Behaviour::new(
                 [(
@@ -364,7 +363,10 @@ async fn run_swarm(
                 // the reply carries no data because SecureMesh messages are
                 // one-way and correlated by message ID, not by stream.
                 if let Some(channel) = channel {
-                    let _ = swarm.behaviour_mut().sync.send_response(channel, Vec::new());
+                    let _ = swarm
+                        .behaviour_mut()
+                        .sync
+                        .send_response(channel, Vec::new());
                 }
 
                 if payload.is_empty() {
@@ -391,7 +393,11 @@ async fn run_swarm(
                 }
             }
 
-            SwarmEvent::ConnectionClosed { peer_id, num_established, .. } => {
+            SwarmEvent::ConnectionClosed {
+                peer_id,
+                num_established,
+                ..
+            } => {
                 // A peer may hold several connections; it is only gone when the
                 // last one closes.
                 if num_established > 0 {

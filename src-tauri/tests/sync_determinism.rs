@@ -130,11 +130,16 @@ fn approving_a_connected_peer_triggers_synchronisation_by_itself() {
     let a = spawn(&network);
     let b = spawn(&network);
 
-    a.runtime.create_incident(incident("recorded before enrollment")).unwrap();
+    a.runtime
+        .create_incident(incident("recorded before enrollment"))
+        .unwrap();
 
     network.connect(&a.node_id, &b.node_id);
     deliver(&[&a, &b]);
-    assert_eq!(a.runtime.trust_state_of(&b.node_id).unwrap(), TrustState::Pending);
+    assert_eq!(
+        a.runtime.trust_state_of(&b.node_id).unwrap(),
+        TrustState::Pending
+    );
     assert_eq!(b.incidents().len(), 0, "nothing before approval, correctly");
 
     // The only actions from here are the two approvals.
@@ -158,7 +163,9 @@ fn creating_an_incident_triggers_synchronisation_by_itself() {
     let b = spawn(&network);
     connect_and_enroll(&network, &a, &b);
 
-    a.runtime.create_incident(incident("written mid-session")).unwrap();
+    a.runtime
+        .create_incident(incident("written mid-session"))
+        .unwrap();
     deliver(&[&a, &b]);
 
     assert_eq!(b.incidents(), vec!["written mid-session".to_string()]);
@@ -171,10 +178,15 @@ fn an_observation_also_triggers_synchronisation() {
     let b = spawn(&network);
     connect_and_enroll(&network, &a, &b);
 
-    let created = a.runtime.create_incident(incident("initial report")).unwrap();
+    let created = a
+        .runtime
+        .create_incident(incident("initial report"))
+        .unwrap();
     deliver(&[&a, &b]);
 
-    a.runtime.add_observation(&created.id, "water rising").unwrap();
+    a.runtime
+        .add_observation(&created.id, "water rising")
+        .unwrap();
     deliver(&[&a, &b]);
 
     assert_eq!(b.runtime.list_observations(&created.id).unwrap().len(), 1);
@@ -194,7 +206,10 @@ fn synchronisation_does_not_depend_on_which_side_holds_the_data() {
         let b = spawn(&network);
 
         let holder = if data_on_a { &a } else { &b };
-        holder.runtime.create_incident(incident("the only record")).unwrap();
+        holder
+            .runtime
+            .create_incident(incident("the only record"))
+            .unwrap();
 
         connect_and_enroll(&network, &a, &b);
 
@@ -238,8 +253,16 @@ fn synchronisation_does_not_depend_on_which_side_approves_first() {
         deliver(&[&a, &b]);
 
         let expected = vec!["from A".to_string(), "from B".to_string()];
-        assert_eq!(a.incidents(), expected, "A stuck (A approved first = {a_first})");
-        assert_eq!(b.incidents(), expected, "B stuck (A approved first = {a_first})");
+        assert_eq!(
+            a.incidents(),
+            expected,
+            "A stuck (A approved first = {a_first})"
+        );
+        assert_eq!(
+            b.incidents(),
+            expected,
+            "B stuck (A approved first = {a_first})"
+        );
     }
 }
 
@@ -299,7 +322,9 @@ fn restart_alone_resynchronises() {
 
     network.disconnect(&a.node_id, &b.node_id);
     deliver(&[&a, &b]);
-    a.runtime.create_incident(incident("created while B was away")).unwrap();
+    a.runtime
+        .create_incident(incident("created while B was away"))
+        .unwrap();
 
     // B restarts. Trust is durable, so no re-enrollment is needed — but the
     // reconnection must still start a round on its own.
@@ -319,7 +344,9 @@ fn a_restart_of_the_data_holder_also_resynchronises() {
 
     network.disconnect(&a.node_id, &b.node_id);
     deliver(&[&a, &b]);
-    a.runtime.create_incident(incident("survives A restarting")).unwrap();
+    a.runtime
+        .create_incident(incident("survives A restarting"))
+        .unwrap();
 
     let a = restart(&network, a);
     network.connect(&a.node_id, &b.node_id);
@@ -392,7 +419,10 @@ fn repeated_rounds_of_traffic_never_duplicate_or_lose_events() {
     // Alternate writers over many rounds, delivering after each.
     for round in 0..12 {
         let writer = if round % 2 == 0 { &a } else { &b };
-        writer.runtime.create_incident(incident(&format!("round {round}"))).unwrap();
+        writer
+            .runtime
+            .create_incident(incident(&format!("round {round}")))
+            .unwrap();
         deliver(&[&a, &b]);
     }
 
@@ -421,9 +451,13 @@ fn the_bidirectional_round_trip_from_the_brief() {
 
     // Repeatedly, to catch a trigger that only works once.
     for n in 0..5 {
-        a.runtime.create_incident(incident(&format!("A round {n}"))).unwrap();
+        a.runtime
+            .create_incident(incident(&format!("A round {n}")))
+            .unwrap();
         deliver(&[&a, &b]);
-        b.runtime.create_incident(incident(&format!("B round {n}"))).unwrap();
+        b.runtime
+            .create_incident(incident(&format!("B round {n}")))
+            .unwrap();
         deliver(&[&a, &b]);
     }
 
@@ -443,7 +477,9 @@ fn revocation_stops_replication_and_reinstatement_resumes_it() {
     connect_and_enroll(&network, &a, &b);
 
     a.runtime.revoke_peer(&b.node_id, None).unwrap();
-    a.runtime.create_incident(incident("while revoked")).unwrap();
+    a.runtime
+        .create_incident(incident("while revoked"))
+        .unwrap();
     deliver(&[&a, &b]);
     assert_eq!(b.incidents().len(), 0, "a revoked peer receives nothing");
 
@@ -498,7 +534,9 @@ fn a_relay_forwards_without_any_periodic_sweep() {
     connect_and_enroll(&network, &a, &b);
     connect_and_enroll(&network, &b, &c);
 
-    a.runtime.create_incident(incident("originated at A")).unwrap();
+    a.runtime
+        .create_incident(incident("originated at A"))
+        .unwrap();
     deliver(&[&a, &b, &c]);
 
     assert_eq!(c.incidents(), vec!["originated at A".to_string()]);

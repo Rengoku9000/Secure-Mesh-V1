@@ -373,7 +373,10 @@ mod tests {
             Capability::IncidentSync,
             Capability::PeerDiscover,
         ] {
-            assert!(PeerRole::Node.grants(capability), "{capability} should be granted");
+            assert!(
+                PeerRole::Node.grants(capability),
+                "{capability} should be granted"
+            );
         }
     }
 
@@ -387,7 +390,10 @@ mod tests {
             Capability::PeerEnroll,
             Capability::PeerRevoke,
         ] {
-            assert!(PeerRole::Admin.grants(capability), "{capability} should be granted");
+            assert!(
+                PeerRole::Admin.grants(capability),
+                "{capability} should be granted"
+            );
         }
     }
 
@@ -424,9 +430,18 @@ mod tests {
     #[test]
     fn trust_event_names_are_stable_and_round_trip() {
         let expected = [
-            (TrustEventKind::EnrollmentRequested, "peer.enrollment.requested"),
-            (TrustEventKind::EnrollmentApproved, "peer.enrollment.approved"),
-            (TrustEventKind::EnrollmentRejected, "peer.enrollment.rejected"),
+            (
+                TrustEventKind::EnrollmentRequested,
+                "peer.enrollment.requested",
+            ),
+            (
+                TrustEventKind::EnrollmentApproved,
+                "peer.enrollment.approved",
+            ),
+            (
+                TrustEventKind::EnrollmentRejected,
+                "peer.enrollment.rejected",
+            ),
             (TrustEventKind::Revoked, "peer.revoked"),
             (TrustEventKind::Reinstated, "peer.reinstated"),
         ];

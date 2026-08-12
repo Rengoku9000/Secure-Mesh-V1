@@ -70,7 +70,11 @@ impl NodeIdentity {
                 audit(
                     AuditEvent::IdentityLoaded,
                     AuditOutcome::Success,
-                    &format!("node={} backend={}", identity.node_name, store.backend_name()),
+                    &format!(
+                        "node={} backend={}",
+                        identity.node_name,
+                        store.backend_name()
+                    ),
                 );
                 Ok(identity)
             }
@@ -79,7 +83,11 @@ impl NodeIdentity {
                 audit(
                     AuditEvent::IdentityCreated,
                     AuditOutcome::Success,
-                    &format!("node={} backend={}", identity.node_name, store.backend_name()),
+                    &format!(
+                        "node={} backend={}",
+                        identity.node_name,
+                        store.backend_name()
+                    ),
                 );
                 Ok(identity)
             }

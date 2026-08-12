@@ -121,7 +121,13 @@ const SCENARIOS: &[Scenario] = &[
             "Structural damage reported to the {asset} in {zone}. {detail}",
             "Engineers report the {asset} in {zone} is no longer safe to use. {detail}",
         ],
-        assets: &["road bridge", "footbridge", "culvert", "retaining wall", "overpass"],
+        assets: &[
+            "road bridge",
+            "footbridge",
+            "culvert",
+            "retaining wall",
+            "overpass",
+        ],
         keywords: &["collapse", "structural", "bridge"],
     },
     Scenario {
@@ -132,7 +138,13 @@ const SCENARIOS: &[Scenario] = &[
             "{zone} is inundated following heavy rain; the {asset} has burst its banks. {detail}",
             "Standing water up to one metre reported throughout {zone} near the {asset}. {detail}",
         ],
-        assets: &["river", "drainage channel", "reservoir", "canal", "storm drain"],
+        assets: &[
+            "river",
+            "drainage channel",
+            "reservoir",
+            "canal",
+            "storm drain",
+        ],
         keywords: &["flood", "water", "rising"],
     },
     Scenario {
@@ -143,7 +155,13 @@ const SCENARIOS: &[Scenario] = &[
             "Smoke and flames visible from the {asset} in {zone}. {detail}",
             "Fire spreading rapidly through the {asset} in {zone}. {detail}",
         ],
-        assets: &["warehouse", "market building", "fuel depot", "residential block", "workshop"],
+        assets: &[
+            "warehouse",
+            "market building",
+            "fuel depot",
+            "residential block",
+            "workshop",
+        ],
         keywords: &["fire", "smoke", "flames"],
     },
     Scenario {
@@ -154,7 +172,13 @@ const SCENARIOS: &[Scenario] = &[
             "Medical team requests support at the {asset} in {zone}. {detail}",
             "Injured persons being triaged at the {asset} in {zone}. {detail}",
         ],
-        assets: &["clinic", "field hospital", "community centre", "school", "relief camp"],
+        assets: &[
+            "clinic",
+            "field hospital",
+            "community centre",
+            "school",
+            "relief camp",
+        ],
         keywords: &["casualties", "medical", "injured"],
     },
     Scenario {
@@ -165,7 +189,13 @@ const SCENARIOS: &[Scenario] = &[
             "Residents of {zone} are being moved to the {asset}. {detail}",
             "Evacuation of {zone} ordered; assembly point is the {asset}. {detail}",
         ],
-        assets: &["assembly point", "higher ground", "shelter", "school hall", "transit centre"],
+        assets: &[
+            "assembly point",
+            "higher ground",
+            "shelter",
+            "school hall",
+            "transit centre",
+        ],
         keywords: &["evacuation", "residents", "shelter"],
     },
     Scenario {
@@ -176,7 +206,13 @@ const SCENARIOS: &[Scenario] = &[
             "The {asset} serving {zone} is offline. {detail}",
             "Electricity supply to {zone} lost; the {asset} is damaged. {detail}",
         ],
-        assets: &["substation", "distribution line", "transformer", "generator", "feeder cable"],
+        assets: &[
+            "substation",
+            "distribution line",
+            "transformer",
+            "generator",
+            "feeder cable",
+        ],
         keywords: &["power", "outage", "electricity"],
     },
     Scenario {
@@ -187,7 +223,13 @@ const SCENARIOS: &[Scenario] = &[
             "The {asset} serving {zone} has failed, leaving no coverage. {detail}",
             "No radio or mobile contact with {zone} since the {asset} went down. {detail}",
         ],
-        assets: &["relay mast", "repeater station", "fibre link", "base station", "antenna array"],
+        assets: &[
+            "relay mast",
+            "repeater station",
+            "fibre link",
+            "base station",
+            "antenna array",
+        ],
         keywords: &["communications", "coverage", "contact"],
     },
     Scenario {
@@ -198,7 +240,13 @@ const SCENARIOS: &[Scenario] = &[
             "{zone} reports a critical shortage of {asset}. {detail}",
             "Stocks of {asset} in {zone} will last less than a day. {detail}",
         ],
-        assets: &["drinking water", "fuel", "blankets", "medical supplies", "dry rations"],
+        assets: &[
+            "drinking water",
+            "fuel",
+            "blankets",
+            "medical supplies",
+            "dry rations",
+        ],
         keywords: &["shortage", "supplies", "stock"],
     },
     Scenario {
@@ -209,7 +257,13 @@ const SCENARIOS: &[Scenario] = &[
             "Aftershock damage reported to the {asset} in {zone}. {detail}",
             "Seismic activity in {zone} has destabilised the {asset}. {detail}",
         ],
-        assets: &["apartment block", "water tower", "school building", "clinic wall", "bridge pier"],
+        assets: &[
+            "apartment block",
+            "water tower",
+            "school building",
+            "clinic wall",
+            "bridge pier",
+        ],
         keywords: &["tremor", "seismic", "cracking"],
     },
     Scenario {
@@ -220,7 +274,13 @@ const SCENARIOS: &[Scenario] = &[
             "Severe storm over {zone}; the {asset} is damaged. {detail}",
             "Hail and gale-force winds in {zone} have destroyed the {asset}. {detail}",
         ],
-        assets: &["temporary shelter", "power line", "roof structure", "market awning", "signage"],
+        assets: &[
+            "temporary shelter",
+            "power line",
+            "roof structure",
+            "market awning",
+            "signage",
+        ],
         keywords: &["wind", "storm", "severe"],
     },
     Scenario {
@@ -231,14 +291,26 @@ const SCENARIOS: &[Scenario] = &[
             "Landslip has closed the {asset} in {zone}. {detail}",
             "A fallen tree is obstructing the {asset} in {zone}. {detail}",
         ],
-        assets: &["main highway", "access road", "mountain pass", "service road", "link road"],
+        assets: &[
+            "main highway",
+            "access road",
+            "mountain pass",
+            "service road",
+            "link road",
+        ],
         keywords: &["blocked", "road", "debris"],
     },
 ];
 
 const ZONES: &[&str] = &[
-    "Zone A", "Zone B", "Zone C", "the northern sector", "the eastern district",
-    "the southern approach", "the western quarter", "the central district",
+    "Zone A",
+    "Zone B",
+    "Zone C",
+    "the northern sector",
+    "the eastern district",
+    "the southern approach",
+    "the western quarter",
+    "the central district",
 ];
 
 const DETAILS: &[&str] = &[
@@ -280,8 +352,7 @@ pub fn generate(seed: u64, count: usize) -> SyntheticDataset {
             scenario.severity.to_string()
         };
 
-        let mut keywords: Vec<String> =
-            scenario.keywords.iter().map(|k| k.to_string()).collect();
+        let mut keywords: Vec<String> = scenario.keywords.iter().map(|k| k.to_string()).collect();
         keywords.push(asset.to_string());
 
         incidents.push(SyntheticIncident {
@@ -458,8 +529,16 @@ mod tests {
     fn descriptions_have_no_unfilled_placeholders() {
         let dataset = generate(5, 300);
         for incident in &dataset.incidents {
-            assert!(!incident.description.contains('{'), "{}", incident.description);
-            assert!(!incident.description.contains('}'), "{}", incident.description);
+            assert!(
+                !incident.description.contains('{'),
+                "{}",
+                incident.description
+            );
+            assert!(
+                !incident.description.contains('}'),
+                "{}",
+                incident.description
+            );
             assert!(incident.description.len() > 30);
         }
     }
@@ -489,7 +568,11 @@ mod tests {
     fn the_question_set_includes_unanswerable_ones() {
         // Without these, an evaluation rewards a model that always answers.
         let dataset = generate(19, 200);
-        let refusals = dataset.questions.iter().filter(|q| q.expect_refusal).count();
+        let refusals = dataset
+            .questions
+            .iter()
+            .filter(|q| q.expect_refusal)
+            .count();
 
         assert!(refusals >= 5, "refusal cases must be represented");
         assert!(dataset.questions.iter().any(|q| !q.expect_refusal));
@@ -516,7 +599,11 @@ mod tests {
         let dataset = generate(23, 300);
         let zones: HashSet<&String> = dataset.incidents.iter().map(|i| &i.zone).collect();
 
-        for question in dataset.questions.iter().filter(|q| q.id.starts_with("Q-ZONE")) {
+        for question in dataset
+            .questions
+            .iter()
+            .filter(|q| q.id.starts_with("Q-ZONE"))
+        {
             let asked = &question.expected_terms[0];
             assert!(zones.contains(asked), "asked about an absent zone: {asked}");
         }

@@ -68,8 +68,6 @@ pub fn index_intelligence(state: State<'_, AppState>) -> CoreResult<IndexReport>
 
 /// Documents in the local knowledge base.
 #[tauri::command]
-pub fn get_knowledge_documents(
-    state: State<'_, AppState>,
-) -> CoreResult<Vec<KnowledgeDocument>> {
+pub fn get_knowledge_documents(state: State<'_, AppState>) -> CoreResult<Vec<KnowledgeDocument>> {
     state.runtime.knowledge_documents()
 }

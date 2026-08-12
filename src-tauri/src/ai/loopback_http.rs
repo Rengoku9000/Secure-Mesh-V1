@@ -286,7 +286,10 @@ mod tests {
     #[test]
     fn status_lines_are_parsed_and_malformed_ones_rejected() {
         assert_eq!(parse_status("HTTP/1.1 200 OK").unwrap(), 200);
-        assert_eq!(parse_status("HTTP/1.1 503 Service Unavailable").unwrap(), 503);
+        assert_eq!(
+            parse_status("HTTP/1.1 503 Service Unavailable").unwrap(),
+            503
+        );
 
         for bad in ["", "garbage", "HTTP/1.1", "HTTP/1.1 not-a-number"] {
             assert!(parse_status(bad).is_err(), "should reject: {bad}");
@@ -318,7 +321,10 @@ mod tests {
 
         // Introducing any of these would mean the client could resolve or reach
         // a host chosen at runtime.
-        for forbidden in ["to_socket".to_string() + "_addrs", "lookup_host".to_string()] {
+        for forbidden in [
+            "to_socket".to_string() + "_addrs",
+            "lookup_host".to_string(),
+        ] {
             assert!(
                 !implementation.contains(&forbidden),
                 "name resolution ({forbidden}) must not be introduced"

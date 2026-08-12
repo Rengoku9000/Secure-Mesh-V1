@@ -39,7 +39,11 @@ pub enum SyncLog<'a> {
     /// A round was opened, and why.
     Started { peer: &'a str, trigger: SyncTrigger },
     /// What this node told the peer it holds.
-    LocalKnowledge { peer: &'a str, origins: usize, events: u64 },
+    LocalKnowledge {
+        peer: &'a str,
+        origins: usize,
+        events: u64,
+    },
     /// What the peer said it holds.
     RemoteKnowledge { peer: &'a str, origins: usize },
     /// The peer holds something this node lacks.
@@ -113,13 +117,21 @@ impl SyncLog<'_> {
             SyncLog::Started { peer, trigger } => {
                 format!("peer={} trigger={trigger}", short(peer))
             }
-            SyncLog::LocalKnowledge { peer, origins, events } => {
+            SyncLog::LocalKnowledge {
+                peer,
+                origins,
+                events,
+            } => {
                 format!("peer={} origins={origins} events={events}", short(peer))
             }
             SyncLog::RemoteKnowledge { peer, origins } => {
                 format!("peer={} origins={origins}", short(peer))
             }
-            SyncLog::Sent { peer, origin, count } => format!(
+            SyncLog::Sent {
+                peer,
+                origin,
+                count,
+            } => format!(
                 "peer={} origin={} count={count}",
                 short(peer),
                 short(origin)
@@ -256,7 +268,11 @@ mod tests {
             SyncTrigger::Manual,
             SyncTrigger::Reconciliation,
         ] {
-            let fields = SyncLog::Started { peer: "abc", trigger }.fields();
+            let fields = SyncLog::Started {
+                peer: "abc",
+                trigger,
+            }
+            .fields();
             assert!(fields.contains(&format!("trigger={trigger}")));
         }
     }

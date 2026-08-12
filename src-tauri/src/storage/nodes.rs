@@ -126,7 +126,10 @@ impl Database {
     /// restarted node would report peers it cannot reach.
     pub fn mark_all_peers_offline(&self) -> CoreResult<()> {
         let conn = self.conn();
-        conn.execute("UPDATE nodes SET status = 'OFFLINE' WHERE status <> 'LOCAL'", [])?;
+        conn.execute(
+            "UPDATE nodes SET status = 'OFFLINE' WHERE status <> 'LOCAL'",
+            [],
+        )?;
         Ok(())
     }
 

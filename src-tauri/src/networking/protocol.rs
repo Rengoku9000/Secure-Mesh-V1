@@ -240,7 +240,9 @@ impl Envelope {
         let key_bytes = hex::decode(&self.sender_public_key)
             .map_err(|_| CoreError::validation("sender public key is not valid hex"))?;
         if key_bytes.len() != 32 {
-            return Err(CoreError::validation("sender public key has a wrong length"));
+            return Err(CoreError::validation(
+                "sender public key has a wrong length",
+            ));
         }
 
         // The sender's claimed node ID must be the hash of the key that will
@@ -288,7 +290,9 @@ impl Envelope {
             }
             MessageBody::SyncResponse { available, .. } => {
                 if available.len() > MAX_WATERMARKS {
-                    return Err(CoreError::validation("sync response lists too many origins"));
+                    return Err(CoreError::validation(
+                        "sync response lists too many origins",
+                    ));
                 }
             }
             MessageBody::EventBatch { events, .. } => {
@@ -299,8 +303,16 @@ impl Envelope {
                     return Err(CoreError::validation("event batch is too large"));
                 }
             }
-            MessageBody::Hello { node_name, capabilities, .. }
-            | MessageBody::PeerInfo { node_name, capabilities, .. } => {
+            MessageBody::Hello {
+                node_name,
+                capabilities,
+                ..
+            }
+            | MessageBody::PeerInfo {
+                node_name,
+                capabilities,
+                ..
+            } => {
                 if node_name.len() > 64 {
                     return Err(CoreError::validation("node name is too long"));
                 }
@@ -505,7 +517,11 @@ mod tests {
 
         for bytes in cases {
             let result = Envelope::decode(&bytes);
-            assert!(result.is_err(), "should reject: {:?}", &bytes[..bytes.len().min(40)]);
+            assert!(
+                result.is_err(),
+                "should reject: {:?}",
+                &bytes[..bytes.len().min(40)]
+            );
         }
     }
 
@@ -519,7 +535,10 @@ mod tests {
     #[test]
     fn a_truncated_message_is_rejected() {
         let dir = TempDir::new().unwrap();
-        let encoded = Envelope::create(&identity(&dir), ping()).unwrap().encode().unwrap();
+        let encoded = Envelope::create(&identity(&dir), ping())
+            .unwrap()
+            .encode()
+            .unwrap();
 
         for cut in [1, encoded.len() / 2, encoded.len() - 1] {
             assert!(Envelope::decode(&encoded[..cut]).is_err());

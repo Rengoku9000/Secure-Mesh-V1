@@ -215,7 +215,10 @@ impl PeerLink {
             return None;
         }
         self.state = LinkState::Synced;
-        let elapsed = self.round_started_at.take().map(|t| t.elapsed().as_millis());
+        let elapsed = self
+            .round_started_at
+            .take()
+            .map(|t| t.elapsed().as_millis());
         self.round_trigger = None;
         elapsed
     }
@@ -291,7 +294,10 @@ mod tests {
 
         assert_eq!(link.state, LinkState::AwaitingAuthorization);
         assert!(!link.state.permits_sync());
-        assert!(link.round_started_at.is_none(), "the open round is abandoned");
+        assert!(
+            link.round_started_at.is_none(),
+            "the open round is abandoned"
+        );
     }
 
     #[test]
@@ -333,13 +339,22 @@ mod tests {
         assert!(!link.state.permits_sync());
 
         link.apply_trust(TrustState::Trusted);
-        assert!(link.state.permits_sync(), "reinstatement resumes without reconnecting");
+        assert!(
+            link.state.permits_sync(),
+            "reinstatement resumes without reconnecting"
+        );
     }
 
     #[test]
     fn trigger_and_state_labels_are_stable() {
-        assert_eq!(LinkState::AwaitingAuthorization.as_str(), "AWAITING_AUTHORIZATION");
-        assert_eq!(SyncTrigger::LocalAuthorization.as_str(), "local_authorization");
+        assert_eq!(
+            LinkState::AwaitingAuthorization.as_str(),
+            "AWAITING_AUTHORIZATION"
+        );
+        assert_eq!(
+            SyncTrigger::LocalAuthorization.as_str(),
+            "local_authorization"
+        );
         assert_eq!(SyncTrigger::Reconciliation.as_str(), "reconciliation");
     }
 }

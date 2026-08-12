@@ -8,22 +8,22 @@
 //! The runtime is deliberately free of Tauri types so it can be constructed
 //! and driven directly from integration tests.
 
-use crate::domain::event::{EventKind, IncidentCreatedPayload, IncidentObservationPayload};
 use crate::ai::{GroundedAnswer, IndexReport, IntelligenceService, IntelligenceStatus};
+use crate::domain::event::{EventKind, IncidentCreatedPayload, IncidentObservationPayload};
 use crate::domain::trust::{Capability, PeerRole, TrustEvent, TrustState};
 use crate::domain::IncidentAnalysis;
-use crate::storage::intelligence::KnowledgeDocument;
-use std::sync::Arc;
 use crate::domain::{Incident, MeshEvent, NewIncident, Observation, SyncStatus};
 use crate::error::{CoreError, CoreResult};
 use crate::identity::keystore::FileKeyStore;
 use crate::identity::{NodeIdentity, PublicIdentity};
 use crate::networking::{MeshTransport, PeerDescriptor};
 use crate::security::{audit, AuditEvent, AuditOutcome};
+use crate::storage::intelligence::KnowledgeDocument;
 use crate::storage::Database;
 use crate::sync::{LinkSnapshot, SyncEngine, SyncReport};
 use serde::Serialize;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::Mutex;
 use uuid::Uuid;
 
@@ -118,9 +118,7 @@ impl NodeRuntime {
         let Some(mesh) = &self.mesh else {
             return Ok(SyncReport::default());
         };
-        let mut engine = mesh
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut engine = mesh.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         engine.tick(&self.database, &self.identity)
     }
 
@@ -129,9 +127,7 @@ impl NodeRuntime {
         let Some(mesh) = &self.mesh else {
             return Ok((0, 0));
         };
-        let engine = mesh
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let engine = mesh.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         engine.authorized_peer_count(&self.database)
     }
 
@@ -144,9 +140,7 @@ impl NodeRuntime {
         let Some(mesh) = &self.mesh else {
             return Ok(());
         };
-        let mut engine = mesh
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut engine = mesh.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         engine.sync_all_peers(&self.database, &self.identity)
     }
 
@@ -356,9 +350,7 @@ impl NodeRuntime {
         let Some(mesh) = &self.mesh else {
             return Ok(());
         };
-        let mut engine = mesh
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut engine = mesh.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         engine.reconcile(&self.database, &self.identity)
     }
 
@@ -416,7 +408,8 @@ impl NodeRuntime {
                     longitude: incident.longitude,
                 },
             )?;
-            self.database.backfill_incident_event(&event, &incident.id)?;
+            self.database
+                .backfill_incident_event(&event, &incident.id)?;
         }
 
         audit(
@@ -471,9 +464,7 @@ impl NodeRuntime {
         let Some(mesh) = &self.mesh else {
             return;
         };
-        let mut engine = mesh
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut engine = mesh.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if let Err(error) = engine.on_local_event(&self.database, &self.identity) {
             eprintln!(
@@ -492,9 +483,7 @@ impl NodeRuntime {
         let Some(mesh) = &self.mesh else {
             return;
         };
-        let mut engine = mesh
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut engine = mesh.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if let Err(error) =
             engine.on_authorization_changed(&self.database, &self.identity, peer_node_id)
@@ -604,7 +593,10 @@ impl NodeRuntime {
     /// Subsystems that do not exist yet report exactly that. The runtime never
     /// reports a capability SecureMesh does not currently have.
     pub fn system_status(&self) -> SystemStatus {
-        let database = match (self.database.health_check(), self.database.count_incidents()) {
+        let database = match (
+            self.database.health_check(),
+            self.database.count_incidents(),
+        ) {
             (Ok(()), Ok(count)) => ComponentStatus::operational(
                 "Healthy",
                 format!(
@@ -833,7 +825,9 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let node = NodeRuntime::initialize(dir.path()).unwrap();
 
-        let incident = node.create_incident(input("Power line down", "HIGH")).unwrap();
+        let incident = node
+            .create_incident(input("Power line down", "HIGH"))
+            .unwrap();
         assert_eq!(incident.created_by, node.public_identity().node_id);
         assert_eq!(incident.sync_status, SyncStatus::Pending);
     }
@@ -890,7 +884,8 @@ mod tests {
     fn no_serialised_runtime_output_contains_the_private_key() {
         let dir = TempDir::new().unwrap();
         let node = NodeRuntime::initialize(dir.path()).unwrap();
-        node.create_incident(input("check for leaks", "LOW")).unwrap();
+        node.create_incident(input("check for leaks", "LOW"))
+            .unwrap();
 
         let keyfile = std::fs::read_to_string(dir.path().join(KEYSTORE_FILE)).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&keyfile).unwrap();
@@ -1000,7 +995,8 @@ mod tests {
 
         {
             let node = NodeRuntime::initialize(dir.path()).unwrap();
-            node.create_incident(input("before restart", "LOW")).unwrap();
+            node.create_incident(input("before restart", "LOW"))
+                .unwrap();
         }
 
         let node = NodeRuntime::initialize(dir.path()).unwrap();
@@ -1017,7 +1013,9 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let node = NodeRuntime::initialize(dir.path()).unwrap();
 
-        let incident = node.create_incident(input("awaiting a peer", "LOW")).unwrap();
+        let incident = node
+            .create_incident(input("awaiting a peer", "LOW"))
+            .unwrap();
         assert_eq!(incident.sync_status, SyncStatus::Pending);
     }
 
@@ -1040,7 +1038,10 @@ mod tests {
             .collect();
 
         for handle in handles {
-            handle.join().unwrap().expect("concurrent create should succeed");
+            handle
+                .join()
+                .unwrap()
+                .expect("concurrent create should succeed");
         }
 
         let node_id = node.public_identity().node_id;
@@ -1056,8 +1057,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let node = NodeRuntime::initialize(dir.path()).unwrap();
 
-        let incident = node.create_incident(input("Initial report", "MEDIUM")).unwrap();
-        node.add_observation(&incident.id, "Water level rising").unwrap();
+        let incident = node
+            .create_incident(input("Initial report", "MEDIUM"))
+            .unwrap();
+        node.add_observation(&incident.id, "Water level rising")
+            .unwrap();
 
         // The incident itself is untouched.
         let reloaded = node.get_incident(&incident.id).unwrap();
@@ -1098,7 +1102,8 @@ mod tests {
             let b = node.create_incident(input("legacy two", "LOW")).unwrap();
 
             let conn = node.database().conn();
-            conn.execute("UPDATE incidents SET origin_event_id = NULL", []).unwrap();
+            conn.execute("UPDATE incidents SET origin_event_id = NULL", [])
+                .unwrap();
             conn.execute("DELETE FROM events", []).unwrap();
             vec![a.id, b.id]
         };

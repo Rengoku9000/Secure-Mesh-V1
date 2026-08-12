@@ -1,4 +1,4 @@
-﻿//! The AI trust boundary.
+//! The AI trust boundary.
 //!
 //! Phase 3 added a component that consumes untrusted text and produces
 //! untrusted text. These tests establish what it can and cannot reach.
@@ -13,10 +13,10 @@
 //! deliberate: a runtime assertion could only show that today's model did not
 //! do something, whereas these show that no model could.
 
+use securemesh_lib::ai::embedding::{Embedding, EmbeddingEngine};
 use securemesh_lib::ai::engine::{
     EngineHealth, GenerationRequest, LocalInferenceEngine, ModelInfo, StructuredRequest,
 };
-use securemesh_lib::ai::embedding::{Embedding, EmbeddingEngine};
 use securemesh_lib::ai::{IntelligenceService, Unavailable};
 use securemesh_lib::domain::{NewIncident, PeerRole, TrustState};
 use securemesh_lib::identity::keystore::FileKeyStore;
@@ -194,7 +194,13 @@ fn no_ai_module_can_reach_the_keystore_or_sign_anything() {
         ("evaluation.rs", include_str!("../src/ai/evaluation.rs")),
     ] {
         let implementation = implementation_of(source);
-        for forbidden in ["FileKeyStore", "keystore", ".sign(", "SigningKey", "Secret<"] {
+        for forbidden in [
+            "FileKeyStore",
+            "keystore",
+            ".sign(",
+            "SigningKey",
+            "Secret<",
+        ] {
             assert!(
                 !implementation.contains(forbidden),
                 "{name} must not reference {forbidden}"
@@ -274,9 +280,8 @@ fn the_inference_runtime_is_reached_only_over_loopback() {
 
 #[test]
 fn model_output_claiming_to_change_trust_state_is_rejected() {
-    let h = harness(
-        r#"{"summary":"ok","severity":"LOW","trust_state":"TRUSTED","peer_role":"ADMIN"}"#,
-    );
+    let h =
+        harness(r#"{"summary":"ok","severity":"LOW","trust_state":"TRUSTED","peer_role":"ADMIN"}"#);
     let id = incident(&h, "A report");
 
     // Unknown fields are refused outright, so a model cannot even express the
@@ -380,7 +385,9 @@ fn an_injected_instruction_in_an_incident_cannot_reach_a_capability() {
 
 #[test]
 fn a_question_containing_an_injection_is_answered_as_a_question() {
-    let h = harness("I don't have sufficient information in the SecureMesh knowledge base to answer this.");
+    let h = harness(
+        "I don't have sufficient information in the SecureMesh knowledge base to answer this.",
+    );
 
     let answer = h
         .runtime
@@ -436,7 +443,10 @@ fn no_intelligence_response_contains_private_key_material() {
     ];
 
     for payload in payloads {
-        assert!(!payload.contains(secret), "intelligence leaked key material");
+        assert!(
+            !payload.contains(secret),
+            "intelligence leaked key material"
+        );
     }
 }
 
@@ -483,9 +493,18 @@ fn the_dashboard_reports_ai_unavailable_without_degrading_other_subsystems() {
 
     // The property the brief calls critical: AI is not a single point of
     // failure.
-    assert_eq!(status.database.state, securemesh_lib::runtime::ComponentState::Operational);
-    assert_eq!(status.identity.state, securemesh_lib::runtime::ComponentState::Operational);
-    assert_eq!(status.ai.state, securemesh_lib::runtime::ComponentState::Inactive);
+    assert_eq!(
+        status.database.state,
+        securemesh_lib::runtime::ComponentState::Operational
+    );
+    assert_eq!(
+        status.identity.state,
+        securemesh_lib::runtime::ComponentState::Operational
+    );
+    assert_eq!(
+        status.ai.state,
+        securemesh_lib::runtime::ComponentState::Inactive
+    );
 }
 
 #[test]

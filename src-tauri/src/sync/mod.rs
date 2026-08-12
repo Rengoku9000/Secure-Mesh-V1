@@ -54,9 +54,9 @@ use crate::domain::trust::{Capability, TrustState};
 use crate::domain::MeshEvent as DomainEvent;
 use crate::error::{CoreError, CoreResult};
 use crate::identity::NodeIdentity;
-use crate::security::{audit, AuditEvent, AuditOutcome};
 use crate::networking::protocol::{Envelope, MessageBody, OriginWatermark};
 use crate::networking::{MeshEvent, MeshTransport, PeerDescriptor};
+use crate::security::{audit, AuditEvent, AuditOutcome};
 use crate::storage::events::{ApplyOutcome, MAX_SYNC_BATCH};
 use crate::storage::Database;
 use std::collections::HashMap;
@@ -159,11 +159,7 @@ impl<T: MeshTransport> SyncEngine<T> {
     /// Called on a timer by the runtime. Each tick is a complete, independent
     /// unit of work: nothing is carried between ticks in memory, so a tick that
     /// is interrupted loses no progress.
-    pub fn tick(
-        &mut self,
-        database: &Database,
-        identity: &NodeIdentity,
-    ) -> CoreResult<SyncReport> {
+    pub fn tick(&mut self, database: &Database, identity: &NodeIdentity) -> CoreResult<SyncReport> {
         let mut report = SyncReport::default();
 
         // `poll_events` drains the transport, so every event in this batch has
@@ -302,7 +298,12 @@ impl<T: MeshTransport> SyncEngine<T> {
         });
 
         if trust.permits_authorized_operations() {
-            self.open_round(database, identity, peer_node_id, SyncTrigger::LocalAuthorization)?;
+            self.open_round(
+                database,
+                identity,
+                peer_node_id,
+                SyncTrigger::LocalAuthorization,
+            )?;
         }
         Ok(())
     }
@@ -537,7 +538,13 @@ impl<T: MeshTransport> SyncEngine<T> {
             // caller counts as a rejected message; it never reaches storage.
             MessageBody::SyncRequest { have } => {
                 Self::authorize(database, &from.node_id, Capability::IncidentSync)?;
-                self.serve_sync_request(database, identity, &from.node_id, have, &envelope.message_id)?;
+                self.serve_sync_request(
+                    database,
+                    identity,
+                    &from.node_id,
+                    have,
+                    &envelope.message_id,
+                )?;
             }
 
             MessageBody::SyncResponse { .. } => {
@@ -545,7 +552,11 @@ impl<T: MeshTransport> SyncEngine<T> {
                 // Advisory only: the batches carry the data. Nothing to do.
             }
 
-            MessageBody::EventBatch { origin_node, events, complete } => {
+            MessageBody::EventBatch {
+                origin_node,
+                events,
+                complete,
+            } => {
                 Self::authorize(database, &from.node_id, Capability::IncidentSync)?;
                 let partial = self.apply_batch(
                     database,
@@ -573,7 +584,11 @@ impl<T: MeshTransport> SyncEngine<T> {
                 report.merge(partial);
             }
 
-            MessageBody::Ack { origin_node, accepted_through, .. } => {
+            MessageBody::Ack {
+                origin_node,
+                accepted_through,
+                ..
+            } => {
                 Self::authorize(database, &from.node_id, Capability::IncidentSync)?;
                 database.record_peer_ack(&from.node_id, &origin_node, accepted_through)?;
                 database.refresh_local_sync_status(identity.node_id())?;
@@ -662,7 +677,10 @@ impl<T: MeshTransport> SyncEngine<T> {
         database.refresh_local_sync_status(identity.node_id())?;
 
         for offer in available {
-            let peer_watermark = peer_watermarks.get(&offer.origin_node).copied().unwrap_or(0);
+            let peer_watermark = peer_watermarks
+                .get(&offer.origin_node)
+                .copied()
+                .unwrap_or(0);
             let events =
                 database.events_since(&offer.origin_node, peer_watermark, MAX_SYNC_BATCH)?;
             if events.is_empty() {
@@ -759,12 +777,7 @@ impl<T: MeshTransport> SyncEngine<T> {
     }
 
     /// Signs and sends a message, tolerating an unreachable peer.
-    fn send(
-        &self,
-        identity: &NodeIdentity,
-        to: &str,
-        body: MessageBody,
-    ) -> CoreResult<()> {
+    fn send(&self, identity: &NodeIdentity, to: &str, body: MessageBody) -> CoreResult<()> {
         let envelope = Envelope::create(identity, body)?;
         // A send failure means the peer went away mid-round. That is expected
         // in the field: the log is durable and the next connection re-runs the

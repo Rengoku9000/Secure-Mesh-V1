@@ -179,11 +179,17 @@ fn attach_intelligence(runtime: &mut NodeRuntime) {
     // Report what is missing rather than failing silently: "AI is unavailable"
     // is only actionable if an operator can see why.
     if let Err(reason) = generation.availability() {
-        eprintln!("[securemesh] local intelligence unavailable: {}", reason.detail());
+        eprintln!(
+            "[securemesh] local intelligence unavailable: {}",
+            reason.detail()
+        );
         return;
     }
     if let Err(reason) = embedding.availability() {
-        eprintln!("[securemesh] local intelligence unavailable: {}", reason.detail());
+        eprintln!(
+            "[securemesh] local intelligence unavailable: {}",
+            reason.detail()
+        );
         return;
     }
 
@@ -242,8 +248,7 @@ fn spawn_mesh_loop(runtime: Arc<NodeRuntime>) {
     // delivery pump, not a retry loop.
     const TICK_MS: u64 = 100;
     const TICK: std::time::Duration = std::time::Duration::from_millis(TICK_MS);
-    const RECONCILE_EVERY: u32 =
-        (sync::RECONCILE_INTERVAL_SECS * 1000 / TICK_MS) as u32;
+    const RECONCILE_EVERY: u32 = (sync::RECONCILE_INTERVAL_SECS * 1000 / TICK_MS) as u32;
 
     std::thread::Builder::new()
         .name("securemesh-sync".to_string())

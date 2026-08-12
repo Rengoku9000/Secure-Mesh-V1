@@ -218,8 +218,14 @@ mod tests {
         let earlier_text = format_timestamp(earlier);
         let later_text = format_timestamp(later);
 
-        assert!(earlier_text < later_text, "text order must match time order");
-        assert_eq!(parse_timestamp("created_at", &earlier_text).unwrap(), earlier);
+        assert!(
+            earlier_text < later_text,
+            "text order must match time order"
+        );
+        assert_eq!(
+            parse_timestamp("created_at", &earlier_text).unwrap(),
+            earlier
+        );
     }
 
     #[test]

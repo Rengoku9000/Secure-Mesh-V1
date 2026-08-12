@@ -1,4 +1,4 @@
-﻿//! Persistence for the replicated event log.
+//! Persistence for the replicated event log.
 //!
 //! This module owns the two properties replication depends on:
 //!
@@ -189,8 +189,17 @@ impl Database {
 
         let mut incidents = Vec::new();
         for row in rows {
-            let (id, created_by, description, severity, latitude, longitude, created, updated, sync) =
-                row?;
+            let (
+                id,
+                created_by,
+                description,
+                severity,
+                latitude,
+                longitude,
+                created,
+                updated,
+                sync,
+            ) = row?;
             incidents.push(Incident {
                 id,
                 created_by,
@@ -533,7 +542,9 @@ impl EventRow {
 
     fn into_domain(self) -> CoreResult<MeshEvent> {
         if self.origin_seq <= 0 {
-            return Err(CoreError::storage("event has a non-positive sequence number"));
+            return Err(CoreError::storage(
+                "event has a non-positive sequence number",
+            ));
         }
         Ok(MeshEvent {
             event_id: self.event_id,
@@ -602,17 +613,24 @@ mod tests {
         let f = fixture();
         assert_eq!(f.db.next_local_sequence(f.identity.node_id()).unwrap(), 1);
 
-        f.db.apply_event(&event_at(&f.identity, 1, "first"), f.identity.node_id(), None)
-            .unwrap();
+        f.db.apply_event(
+            &event_at(&f.identity, 1, "first"),
+            f.identity.node_id(),
+            None,
+        )
+        .unwrap();
         assert_eq!(f.db.next_local_sequence(f.identity.node_id()).unwrap(), 2);
     }
 
     #[test]
     fn a_new_event_is_stored() {
         let f = fixture();
-        let outcome = f
-            .db
-            .apply_event(&event_at(&f.identity, 1, "first"), f.identity.node_id(), None)
+        let outcome =
+            f.db.apply_event(
+                &event_at(&f.identity, 1, "first"),
+                f.identity.node_id(),
+                None,
+            )
             .unwrap();
 
         assert_eq!(outcome, ApplyOutcome::Stored);
@@ -624,10 +642,15 @@ mod tests {
         let f = fixture();
         let event = event_at(&f.identity, 1, "first");
 
-        assert_eq!(f.db.apply_event(&event, f.identity.node_id(), None).unwrap(), ApplyOutcome::Stored);
+        assert_eq!(
+            f.db.apply_event(&event, f.identity.node_id(), None)
+                .unwrap(),
+            ApplyOutcome::Stored
+        );
         for _ in 0..5 {
             assert_eq!(
-                f.db.apply_event(&event, f.identity.node_id(), None).unwrap(),
+                f.db.apply_event(&event, f.identity.node_id(), None)
+                    .unwrap(),
                 ApplyOutcome::Duplicate
             );
         }
@@ -638,13 +661,18 @@ mod tests {
     fn an_event_id_reused_with_different_content_is_refused() {
         let f = fixture();
         let original = event_at(&f.identity, 1, "genuine");
-        f.db.apply_event(&original, f.identity.node_id(), None).unwrap();
+        f.db.apply_event(&original, f.identity.node_id(), None)
+            .unwrap();
 
         let mut forged = event_at(&f.identity, 2, "tampered");
         forged.event_id = original.event_id.clone();
 
-        let err = f.db.apply_event(&forged, f.identity.node_id(), None).unwrap_err();
-        assert!(err.message().contains("already exists with different content"));
+        let err =
+            f.db.apply_event(&forged, f.identity.node_id(), None)
+                .unwrap_err();
+        assert!(err
+            .message()
+            .contains("already exists with different content"));
         assert_eq!(f.db.count_events().unwrap(), 1);
     }
 
@@ -656,9 +684,14 @@ mod tests {
         let first = event_at(&f.identity, 1, "version one");
         let second = event_at(&f.identity, 1, "version two");
 
-        assert_eq!(f.db.apply_event(&first, f.identity.node_id(), None).unwrap(), ApplyOutcome::Stored);
         assert_eq!(
-            f.db.apply_event(&second, f.identity.node_id(), Some("peer-x")).unwrap(),
+            f.db.apply_event(&first, f.identity.node_id(), None)
+                .unwrap(),
+            ApplyOutcome::Stored
+        );
+        assert_eq!(
+            f.db.apply_event(&second, f.identity.node_id(), Some("peer-x"))
+                .unwrap(),
             ApplyOutcome::Conflict
         );
 
@@ -718,8 +751,12 @@ mod tests {
         // Arrive out of order: 1, then 3. The watermark must stay at 1.
         f.db.apply_event(&event_at(&f.identity, 1, "one"), f.identity.node_id(), None)
             .unwrap();
-        f.db.apply_event(&event_at(&f.identity, 3, "three"), f.identity.node_id(), None)
-            .unwrap();
+        f.db.apply_event(
+            &event_at(&f.identity, 3, "three"),
+            f.identity.node_id(),
+            None,
+        )
+        .unwrap();
         assert_eq!(f.db.watermark_for(f.identity.node_id()).unwrap(), 1);
 
         // Filling the hole folds in the event that was already held.
@@ -752,8 +789,12 @@ mod tests {
     fn events_since_returns_only_what_the_peer_lacks() {
         let f = fixture();
         for seq in 1..=5 {
-            f.db.apply_event(&event_at(&f.identity, seq, &format!("e{seq}")), f.identity.node_id(), None)
-                .unwrap();
+            f.db.apply_event(
+                &event_at(&f.identity, seq, &format!("e{seq}")),
+                f.identity.node_id(),
+                None,
+            )
+            .unwrap();
         }
 
         let delta = f.db.events_since(f.identity.node_id(), 2, 100).unwrap();
@@ -784,7 +825,10 @@ mod tests {
                 .unwrap();
         }
 
-        assert_eq!(f.db.events_since(f.identity.node_id(), 0, 4).unwrap().len(), 4);
+        assert_eq!(
+            f.db.events_since(f.identity.node_id(), 0, 4).unwrap().len(),
+            4
+        );
         // An absurd limit is clamped rather than honoured.
         assert!(
             f.db.events_since(f.identity.node_id(), 0, u32::MAX)
@@ -798,7 +842,8 @@ mod tests {
     fn a_stored_event_round_trips_unchanged_and_still_verifies() {
         let f = fixture();
         let original = event_at(&f.identity, 1, "round trip");
-        f.db.apply_event(&original, f.identity.node_id(), None).unwrap();
+        f.db.apply_event(&original, f.identity.node_id(), None)
+            .unwrap();
 
         let loaded = f.db.events_since(f.identity.node_id(), 0, 10).unwrap();
         assert_eq!(loaded.len(), 1);
@@ -836,9 +881,11 @@ mod tests {
                 .unwrap();
         }
 
-        f.db.record_peer_ack("peer-b", f.identity.node_id(), 3).unwrap();
+        f.db.record_peer_ack("peer-b", f.identity.node_id(), 3)
+            .unwrap();
         // A stale ACK arriving late must not cause events to be re-sent.
-        f.db.record_peer_ack("peer-b", f.identity.node_id(), 1).unwrap();
+        f.db.record_peer_ack("peer-b", f.identity.node_id(), 1)
+            .unwrap();
 
         assert_eq!(f.db.pending_events_for_peer("peer-b").unwrap(), 0);
     }
@@ -846,8 +893,12 @@ mod tests {
     #[test]
     fn a_peer_is_never_sent_its_own_events() {
         let f = fixture();
-        f.db.apply_event(&event_at(&f.identity, 1, "mine"), f.identity.node_id(), None)
-            .unwrap();
+        f.db.apply_event(
+            &event_at(&f.identity, 1, "mine"),
+            f.identity.node_id(),
+            None,
+        )
+        .unwrap();
 
         // From the local node's own perspective it needs nothing sent to it.
         assert_eq!(
@@ -872,8 +923,10 @@ mod tests {
                 identity.created_at(),
             )
             .unwrap();
-            db.apply_event(&event_at(&identity, 1, "e"), identity.node_id(), None).unwrap();
-            db.apply_event(&event_at(&identity, 2, "e"), identity.node_id(), None).unwrap();
+            db.apply_event(&event_at(&identity, 1, "e"), identity.node_id(), None)
+                .unwrap();
+            db.apply_event(&event_at(&identity, 2, "e"), identity.node_id(), None)
+                .unwrap();
             db.record_peer_ack("peer-b", identity.node_id(), 1).unwrap();
         }
 
@@ -887,13 +940,16 @@ mod tests {
     fn sync_watermarks_describe_every_origin_held() {
         let f = fixture();
         let other_dir = TempDir::new().unwrap();
-        let other = NodeIdentity::load_or_create(&FileKeyStore::new(
-            other_dir.path().join("id.json"),
-        ))
-        .unwrap();
+        let other =
+            NodeIdentity::load_or_create(&FileKeyStore::new(other_dir.path().join("id.json")))
+                .unwrap();
 
-        f.db.apply_event(&event_at(&f.identity, 1, "mine"), f.identity.node_id(), None)
-            .unwrap();
+        f.db.apply_event(
+            &event_at(&f.identity, 1, "mine"),
+            f.identity.node_id(),
+            None,
+        )
+        .unwrap();
         f.db.apply_event(&event_at(&other, 1, "theirs"), f.identity.node_id(), None)
             .unwrap();
         f.db.apply_event(&event_at(&other, 2, "theirs"), f.identity.node_id(), None)

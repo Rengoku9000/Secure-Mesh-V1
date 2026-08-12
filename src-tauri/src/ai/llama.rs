@@ -478,7 +478,10 @@ mod tests {
         assert!(!generation.embeddings);
 
         let embedding = LlamaConfig::embedding(root, 2);
-        assert!(embedding.model_path.to_string_lossy().contains("embeddings"));
+        assert!(embedding
+            .model_path
+            .to_string_lossy()
+            .contains("embeddings"));
         assert!(embedding.embeddings);
         assert_ne!(generation.model_id, embedding.model_id);
     }

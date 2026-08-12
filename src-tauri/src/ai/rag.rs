@@ -161,7 +161,10 @@ pub fn chunk_text(text: &str, target_chars: usize, overlap_sentences: usize) -> 
         chunks.push(current.join(" "));
     }
 
-    chunks.into_iter().filter(|c| !c.trim().is_empty()).collect()
+    chunks
+        .into_iter()
+        .filter(|c| !c.trim().is_empty())
+        .collect()
 }
 
 /// Collapses whitespace so chunking is not thrown off by document formatting.
@@ -414,7 +417,16 @@ mod tests {
 
     #[test]
     fn malformed_markers_are_ignored_without_panicking() {
-        for text in ["[S]", "[", "[[S1", "[Sx]", "]S1[", "[S 1]", "", "[S99999999999999999999]"] {
+        for text in [
+            "[S]",
+            "[",
+            "[[S1",
+            "[Sx]",
+            "]S1[",
+            "[S 1]",
+            "",
+            "[S99999999999999999999]",
+        ] {
             let _ = extract_citations(text, 3);
         }
         assert!(extract_citations("[S]", 3).is_empty());
@@ -467,7 +479,11 @@ mod tests {
         let long = format!("{}.", "word ".repeat(200));
         let chunks = chunk_text(&long, 50, 1);
 
-        assert_eq!(chunks.len(), 1, "a single sentence is not split mid-thought");
+        assert_eq!(
+            chunks.len(),
+            1,
+            "a single sentence is not split mid-thought"
+        );
     }
 
     #[test]
