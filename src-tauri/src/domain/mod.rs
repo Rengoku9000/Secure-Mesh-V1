@@ -7,6 +7,7 @@
 
 pub mod event;
 pub mod incident;
+pub mod intelligence;
 pub mod node;
 pub mod peer;
 pub mod trust;
@@ -15,6 +16,9 @@ pub use event::{EventKind, IncidentCreatedPayload, IncidentObservationPayload, M
 pub use incident::{Incident, NewIncident, Observation, Severity, SyncStatus};
 pub use node::{NodeRecord, NodeStatus};
 pub use peer::{ConnectionState, Peer};
+pub use intelligence::{
+    AccessStatus, IncidentAnalysis, IncidentCategory, RawAnalysis,
+};
 pub use trust::{Capability, PeerRole, TrustEvent, TrustEventKind, TrustState};
 
 use chrono::{DateTime, Utc};

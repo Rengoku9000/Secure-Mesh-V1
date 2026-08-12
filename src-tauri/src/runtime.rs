@@ -9,7 +9,11 @@
 //! and driven directly from integration tests.
 
 use crate::domain::event::{EventKind, IncidentCreatedPayload, IncidentObservationPayload};
+use crate::ai::{GroundedAnswer, IndexReport, IntelligenceService, IntelligenceStatus};
 use crate::domain::trust::{Capability, PeerRole, TrustEvent, TrustState};
+use crate::domain::IncidentAnalysis;
+use crate::storage::intelligence::KnowledgeDocument;
+use std::sync::Arc;
 use crate::domain::{Incident, MeshEvent, NewIncident, Observation, SyncStatus};
 use crate::error::{CoreError, CoreResult};
 use crate::identity::keystore::FileKeyStore;
@@ -34,7 +38,9 @@ pub const KEYSTORE_FILE: &str = "node_identity.json";
 /// A running SecureMesh node.
 pub struct NodeRuntime {
     identity: NodeIdentity,
-    database: Database,
+    /// Shared so the intelligence service can read incidents and write derived
+    /// tables without being handed the runtime itself.
+    database: Arc<Database>,
     /// Serialises local event creation.
     ///
     /// Allocating a sequence number and storing the event are two separate
@@ -42,6 +48,11 @@ pub struct NodeRuntime {
     /// could read the same next sequence number and the second would land as a
     /// self-equivocation — the node accusing itself of forking its own log.
     local_append: Mutex<()>,
+    /// Local intelligence, when a model is provisioned.
+    ///
+    /// An `Option` rather than a field that must be populated: the type says
+    /// that a node without AI is a normal node, not a broken one.
+    intelligence: Option<Arc<IntelligenceService>>,
     /// The mesh, when one is attached. `None` means this node runs standalone,
     /// which is a fully supported mode rather than a failure.
     mesh: Option<Mutex<SyncEngine<Box<dyn MeshTransport>>>>,
@@ -76,7 +87,7 @@ impl NodeRuntime {
         let keystore = FileKeyStore::new(data_dir.join(KEYSTORE_FILE));
         let identity = NodeIdentity::load_or_create(&keystore)?;
 
-        let database = Database::open(data_dir.join(DATABASE_FILE))?;
+        let database = Arc::new(Database::open(data_dir.join(DATABASE_FILE))?);
         database.register_local_node(
             identity.node_id(),
             identity.node_name(),
@@ -93,6 +104,7 @@ impl NodeRuntime {
             database,
             local_append: Mutex::new(()),
             mesh: transport.map(|t| Mutex::new(SyncEngine::new(t))),
+            intelligence: None,
         };
         runtime.backfill_legacy_incidents()?;
         Ok(runtime)
@@ -163,6 +175,102 @@ impl NodeRuntime {
     /// Whether a mesh transport is attached to this node.
     pub fn mesh_attached(&self) -> bool {
         self.mesh.is_some()
+    }
+
+    // --- Local intelligence (Phase 3) -------------------------------------
+
+    /// Attaches local intelligence.
+    ///
+    /// Separate from construction on purpose: a node is fully functional before
+    /// this is called and remains so if it never is. Nothing below this point
+    /// can make incident capture or replication fail.
+    pub fn attach_intelligence(&mut self, service: IntelligenceService) {
+        self.intelligence = Some(Arc::new(service));
+    }
+
+    /// The intelligence service, if one is attached.
+    pub fn intelligence(&self) -> Option<Arc<IntelligenceService>> {
+        self.intelligence.clone()
+    }
+
+    /// Status for the dashboard, including when no service is attached.
+    pub fn intelligence_status(&self) -> IntelligenceStatus {
+        match &self.intelligence {
+            Some(service) => service.status(),
+            None => IntelligenceStatus {
+                state: "UNAVAILABLE".to_string(),
+                detail: "Local intelligence is not configured on this node.".to_string(),
+                model_name: None,
+                model_id: None,
+                quantisation: None,
+                inference: "LOCAL".to_string(),
+                network_dependency: "NONE".to_string(),
+                embedding_model: None,
+                analyses_stored: 0,
+                documents_indexed: 0,
+                chunks_indexed: 0,
+                vectors_stored: 0,
+            },
+        }
+    }
+
+    /// Refuses cleanly when intelligence is not available.
+    fn require_intelligence(&self) -> CoreResult<Arc<IntelligenceService>> {
+        self.intelligence.clone().ok_or_else(|| {
+            CoreError::internal(
+                "Local intelligence is not available on this node. \
+                 Incident capture and synchronisation are unaffected.",
+            )
+        })
+    }
+
+    /// Analyses an incident locally and stores the derived intelligence.
+    pub fn analyse_incident(&self, incident_id: &str) -> CoreResult<IncidentAnalysis> {
+        self.require_intelligence()?.analyse_incident(incident_id)
+    }
+
+    /// The stored analysis for an incident, if any.
+    pub fn incident_analysis(&self, incident_id: &str) -> CoreResult<Option<IncidentAnalysis>> {
+        match &self.intelligence {
+            Some(service) => service.analysis_for(incident_id),
+            // Absent intelligence means no analysis, not an error: the incident
+            // view must render on a node with no model.
+            None => Ok(None),
+        }
+    }
+
+    /// Answers a question from this node's own records.
+    pub fn ask_intelligence(
+        &self,
+        question: &str,
+        top_k: Option<usize>,
+    ) -> CoreResult<GroundedAnswer> {
+        self.require_intelligence()?.ask(question, top_k)
+    }
+
+    /// Embeds whatever is not yet indexed.
+    pub fn index_intelligence(&self) -> CoreResult<IndexReport> {
+        self.require_intelligence()?.index_pending()
+    }
+
+    /// Ingests a document into the local knowledge base.
+    pub fn ingest_document(
+        &self,
+        title: &str,
+        source: &str,
+        source_type: &str,
+        text: &str,
+    ) -> CoreResult<Option<String>> {
+        self.require_intelligence()?
+            .ingest_document(title, source, source_type, text)
+    }
+
+    /// Documents held in the local knowledge base.
+    pub fn knowledge_documents(&self) -> CoreResult<Vec<KnowledgeDocument>> {
+        match &self.intelligence {
+            Some(service) => service.documents(),
+            None => Ok(Vec::new()),
+        }
     }
 
     // --- Peer authorization (Phase 2.5) -----------------------------------
@@ -541,12 +649,22 @@ impl NodeRuntime {
                     ),
                 ),
             },
-            // Phase 3. No model is bundled and no inference runtime is loaded.
-            ai: ComponentStatus::inactive(
-                "Not installed",
-                "Local inference arrives in Phase 3. No model is present on this node."
-                    .to_string(),
-            ),
+            ai: {
+                let status = self.intelligence_status();
+                match status.state.as_str() {
+                    "READY" => ComponentStatus::operational(
+                        "Ready",
+                        format!(
+                            "{} running locally. No network dependency.",
+                            status.model_name.as_deref().unwrap_or("Local model")
+                        ),
+                    ),
+                    "LOADING" => ComponentStatus::inactive("Loading", status.detail),
+                    // Unavailable intelligence is not a degraded node: the rest
+                    // of SecureMesh is unaffected, so it reads as inactive.
+                    _ => ComponentStatus::inactive("Unavailable", status.detail),
+                }
+            },
             // Phase 5. Claiming otherwise on a normal OS process would be false.
             tee: ComponentStatus::inactive(
                 "Not available",
@@ -589,7 +707,15 @@ impl NodeRuntime {
 
     /// Test and diagnostic access to the underlying database.
     pub fn database(&self) -> &Database {
-        &self.database
+        self.database.as_ref()
+    }
+
+    /// A shared handle to the database, for the intelligence service.
+    ///
+    /// Intelligence reads incidents and writes only derived tables; it holds no
+    /// identity, keystore, or sync handle. See `crate::ai` for the boundary.
+    pub fn database_handle(&self) -> Arc<Database> {
+        Arc::clone(&self.database)
     }
 }
 

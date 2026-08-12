@@ -1,0 +1,160 @@
+import { useState, type FormEvent } from "react";
+import { Panel } from "../../components/Panel";
+import { askSecureMesh, CoreError } from "../../lib/ipc";
+import type { GroundedAnswer, IntelligenceStatus } from "../../types/core";
+
+interface AskSecureMeshProps {
+  status: IntelligenceStatus | null;
+}
+
+/**
+ * Question answering over this node's own records.
+ *
+ * The answer and its sources are presented separately and labelled, because the
+ * distinction matters operationally: an answer the model built from retrieved
+ * passages is different in kind from one it produced without citing anything,
+ * and presenting both the same way would invite the second to be trusted like
+ * the first.
+ */
+export function AskSecureMesh({ status }: AskSecureMeshProps) {
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState<GroundedAnswer | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const ready = status?.state === "READY";
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (question.trim() === "") {
+      return;
+    }
+
+    setAsking(true);
+    setError(null);
+    try {
+      setAnswer(await askSecureMesh(question, 5));
+    } catch (raw) {
+      setError((raw as CoreError).message ?? "The question could not be answered.");
+      setAnswer(null);
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  return (
+    <Panel
+      title="Ask SecureMesh"
+      subtitle={ready ? "Answered from local records only" : "Requires a local model"}
+    >
+      <form className="form-grid" onSubmit={handleSubmit}>
+        <div className="field">
+          <label className="field__label" htmlFor="ask-question">
+            Question
+          </label>
+          <textarea
+            id="ask-question"
+            className="textarea"
+            style={{ minHeight: 64 }}
+            value={question}
+            maxLength={1000}
+            disabled={!ready || asking}
+            onChange={(event) => setQuestion(event.target.value)}
+            placeholder="What high severity incidents are active near Zone A?"
+          />
+        </div>
+
+        <div className="form-actions">
+          <button
+            type="submit"
+            className="button button--primary"
+            disabled={!ready || asking || question.trim() === ""}
+          >
+            {asking ? "Thinking locally…" : "Ask"}
+          </button>
+        </div>
+      </form>
+
+      {!ready && (
+        <p className="intelligence-detail">
+          {status?.detail ?? "Local intelligence is not available on this node."}
+        </p>
+      )}
+
+      {error && (
+        <div className="alert" role="alert">
+          <div className="alert__body">{error}</div>
+        </div>
+      )}
+
+      {answer && (
+        <div className="answer">
+          <div
+            className={`answer__badge ${
+              answer.refused
+                ? "answer__badge--refused"
+                : answer.grounded
+                  ? "answer__badge--grounded"
+                  : "answer__badge--ungrounded"
+            }`}
+          >
+            {answer.refused
+              ? "NO ANSWER IN LOCAL DATA"
+              : answer.grounded
+                ? "GROUNDED IN LOCAL DATA"
+                : "MODEL INTERPRETATION — NOT CITED"}
+          </div>
+
+          <p className="answer__text">{answer.answer}</p>
+
+          {!answer.refused && !answer.grounded && (
+            <p className="intelligence-detail">
+              The model did not cite any retrieved passage, so this answer is its
+              own interpretation rather than something the local records state.
+            </p>
+          )}
+
+          {answer.droppedCitations > 0 && (
+            <p className="intelligence-detail">
+              The model cited {answer.droppedCitations} source
+              {answer.droppedCitations === 1 ? "" : "s"} that were never
+              retrieved. They have been discarded — treat the rest of this answer
+              with caution.
+            </p>
+          )}
+
+          {answer.sources.length > 0 && (
+            <>
+              <h4 className="answer__heading">Sources</h4>
+              <ul className="source-list">
+                {answer.sources.map((source) => (
+                  <li
+                    key={source.marker}
+                    className={`source ${source.cited ? "source--cited" : ""}`}
+                  >
+                    <div className="source__header">
+                      <span className="source__marker mono">[{source.marker}]</span>
+                      <span className="source__title">{source.title}</span>
+                      <span className="source__score mono">
+                        {source.score.toFixed(2)}
+                      </span>
+                      {!source.cited && (
+                        <span className="source__uncited">retrieved, not cited</span>
+                      )}
+                    </div>
+                    <p className="source__excerpt">{source.excerpt}</p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          <p className="answer__timing mono">
+            retrieval {answer.retrievalMs} ms · generation {answer.generationMs} ms ·{" "}
+            {answer.modelId}
+          </p>
+        </div>
+      )}
+    </Panel>
+  );
+}

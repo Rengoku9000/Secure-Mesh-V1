@@ -363,7 +363,124 @@ Nothing is silently overwritten and nothing is discarded.
 
 ---
 
-## 6. Phase 3 — Local AI (DESIGN ONLY)
+## 6. Phase 3 — Local AI and RAG (IMPLEMENTED)
+
+```text
+   incident text ──▶ fenced as data ──▶ local model ──▶ schema-constrained JSON
+                                                              │
+                                          parse ──▶ validate ─┤
+                                                              ▼
+                                                   derived intelligence
+                                                       (not replicated)
+
+   question ──▶ local embedding ──▶ local vector search ──▶ top-k passages
+                                                                 │
+                                       local model ◀─ context ───┘
+                                             │
+                                             ▼
+                                  answer + verified citations
+```
+
+### 6.1 Model selection
+
+Chosen against the criteria in the brief, on hardware that was measured rather
+than assumed. Full reasoning, licences and checksums:
+[`ai/models/README.md`](../../ai/models/README.md).
+
+| | Choice | Why |
+|---|---|---|
+| Generation | Qwen2.5-1.5B-Instruct, Q4_K_M, 1.04 GB | Reliable schema-constrained output — the deciding criterion, since an unparsable analysis is worthless. Apache-2.0. Fits edge hardware |
+| Embedding | BGE-small-en-v1.5, Q8_0, 35 MB, 384-dim | MIT. Q8 over Q4 because retrieval quality depends directly on embedding fidelity and 35 MB is already negligible |
+| Runtime | llama.cpp b10375, prebuilt, CPU | Building from source needs CMake/Clang/Ninja, none otherwise required. CPU-only is the honest baseline for Phase 6 edge hardware |
+
+A 7B model was rejected: several times the CPU latency for a task that is mostly
+classification and field extraction, and it stops fitting the target hardware.
+
+### 6.2 The runtime is a supervised child process
+
+Rather than linking llama.cpp into the binary, the official server runs as a
+child process reached over loopback. Beyond avoiding a heavy build toolchain,
+this buys **failure isolation** — a model that exhausts memory or crashes takes
+down a child process, not the node — and a **clean boundary** that shares no
+memory with SecureMesh.
+
+The loopback client is hand-written (`src/ai/loopback_http.rs`) specifically to
+avoid adding an HTTP client to the dependency tree, which would falsify the
+verifiable "no HTTP client" property. It takes a **port**, not a host: its
+address is built from `Ipv4Addr::LOCALHOST`, and there is no hostname parameter,
+no URL parsing and no name resolution, so reaching the Internet is
+unrepresentable rather than merely forbidden.
+
+`rustls` and `hickory-proto` do appear in the tree — both via `libp2p` for the
+Phase 2 mesh, the latter through `libp2p-mdns`, which parses DNS-format packets
+on the local multicast group. Neither is reachable from the AI path. The claim
+is "no HTTP client, and no resolution on the inference path", not "no networking
+crates at all".
+
+### 6.3 Model output is untrusted
+
+`RawAnalysis` → validate → `IncidentAnalysis`, mirroring `NewIncident` →
+`Incident` exactly: the invalid state is unrepresentable rather than merely
+checked. `deny_unknown_fields` means a model cannot express a field like
+`trust_state` at all.
+
+The model's severity is stored *beside* the operator's, never over it. See
+`SECURITY.md` §5.15 for the full trust boundary.
+
+### 6.4 Derived intelligence is local and disposable
+
+Analyses and vectors are **not replicated**. An inference is an opinion produced
+by a particular model, and two nodes running different models will legitimately
+disagree — replicating opinions as facts would corrupt the one thing the mesh
+does guarantee. Every node analyses independently, from data it already holds.
+
+Dropping every derived row leaves the operational record intact.
+
+### 6.5 Retrieval
+
+Vectors are stored as `f32` BLOBs and scanned brute-force. A vector extension
+would mean a native dependency on every target platform, for a corpus measured
+in thousands of chunks. Measured: **18 ms** to embed a question and scan 500
+vectors — against roughly **4 s** to generate the answer, so retrieval is not
+where the time goes. That trade stops holding somewhere in the tens of
+thousands; the interface is the same shape an approximate index would need, so
+replacing it later does not disturb callers.
+
+One table serves both knowledge chunks and incidents, because a question must be
+able to rank a procedure and a field report against each other.
+
+### 6.6 Grounding is enforced, not requested
+
+A model *asked* to cite its sources will sometimes cite ones that do not exist —
+and a small one will often not cite at all. Measured on the evaluation corpus,
+asking Qwen2.5-1.5B in prose for `[S1]` markers produced citations in **0 of 19**
+answerable questions: it answered correctly and cited nothing, or quoted record
+IDs it found in the passages. Asking harder would not have fixed that.
+
+Citation is therefore a **field in a constrained schema**, not a request. The
+answer must carry `sources` (the passage numbers used) and `sufficient` (whether
+the context could answer at all), so a model cannot return an answer without
+also stating what it was built from. With the same corpus, model and retrieval,
+grounding went from 0/19 to 19/19.
+
+The numbers are then checked against the passages actually supplied and invented
+ones discarded — reported as `droppedCitations` rather than silently swallowed.
+If retrieval finds nothing the model is never called at all, and the refusal is
+returned directly. `sufficient: false`, an empty answer, or output that will not
+parse all become the same canonical refusal. An answer citing nothing is
+reported as *model interpretation*, not as fact.
+
+This verifies citation, not meaning — a model can cite a real passage and still
+say something it does not support (`SECURITY.md` §6.19).
+
+### 6.7 AI is a layer, never a dependency
+
+The service is an `Option` on the runtime, and analysis is never on the path of
+incident creation or synchronisation. A node with no model, or a crashed
+runtime, keeps capturing and replicating incidents and reports intelligence as
+unavailable. `tests/ai_boundary.rs` asserts this.
+
+## 6b. Original Phase 3 design notes (superseded)
 
 ```
    Incident text

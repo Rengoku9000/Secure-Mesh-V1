@@ -247,6 +247,63 @@ asks whether that file is encrypted:
 
 ---
 
+## 4b. Local intelligence (2 min)
+
+Point at the **Intelligence** panel:
+
+```
+Status:             READY
+Model:              qwen2.5-1.5b-instruct-q4_k_m · Q4_K_M
+Embeddings:         BGE Small EN v1.5
+Inference:          LOCAL
+Network dependency: NONE
+```
+
+> "That's a 1.5-billion-parameter model running on this laptop's CPU. No API
+> key, no endpoint, nothing downloaded at startup — an operator put those files
+> there deliberately. If I unplug the network, this keeps working."
+
+**Analyse an incident.** Open one and press *Analyse locally*. After a couple of
+seconds it shows category, severity, summary, entities, and how long it took.
+
+> "Note it shows the model's severity *next to* the operator's, not instead of
+> it. If a model quietly downgraded an incident someone marked CRITICAL, that
+> would be the worst thing this feature could do. When they disagree, we say so."
+
+**Ask a question.** In *Ask SecureMesh*, ask something the node has data about.
+The answer comes back with numbered sources you can expand.
+
+> "The answer is built only from passages retrieved out of this node's own
+> records. And the model can't answer without saying which passages it used —
+> that's a required field in the output schema, not a polite request. We then
+> check those numbers: if it names a source that wasn't given to it, we drop the
+> reference and tell you we dropped it."
+
+**If asked why the schema rather than just asking the model to cite:**
+
+> "We measured it. Asked in prose for `[S1]` markers, a 1.5B model cited nothing
+> in 0 of 19 answerable questions — it answered correctly and quoted record IDs
+> instead. Making citation a required schema field took that to 19 of 19. Small
+> models don't reliably follow instructions; they do reliably fill a schema."
+
+**Then ask something it cannot know** — "What won the football last night?"
+
+```
+NO ANSWER IN LOCAL DATA
+I don't have sufficient information in the SecureMesh knowledge base
+to answer this.
+```
+
+> "Retrieval found nothing relevant, so the model was never called at all. There
+> was nothing it could ground an answer in, so there was nothing to ask it."
+
+**If asked about hallucination, be precise:**
+
+> We verify *citations*, not *meaning*. A model can cite a real passage and still
+> say something that passage doesn't support. What we can promise is that a
+> source shown to you was genuinely retrieved, and that an answer citing nothing
+> is labelled as model interpretation rather than presented as fact.
+
 ## 5. Themes and accessibility (30 s)
 
 Use the **Auto / Light / Dark** switch in the header.

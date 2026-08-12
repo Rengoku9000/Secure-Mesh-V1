@@ -1,0 +1,60 @@
+{
+  "modelId": "qwen2.5-1.5b-instruct-q4_k_m",
+  "quantisation": "Q4_K_M",
+  "backend": "local-cpu",
+  "embeddingModel": "bge-small-en-v1.5-q8_0",
+  "hardware": "AMD Ryzen AI 7 350 (8C/16T), 23 GB RAM, CPU-only llama.cpp b10375",
+  "promptVersion": "analysis-v2/rag-v2",
+  "datasetVersion": "synthetic-v2",
+  "datasetSeed": 42,
+  "corpusSize": 500,
+  "extraction": {
+    "attempted": 30,
+    "valid": 30,
+    "categoryCorrect": 21,
+    "severityCorrect": 13,
+    "keywordRecall": 0.525,
+    "latency": {
+      "samples": 30,
+      "meanMs": 2674,
+      "medianMs": 2536,
+      "minMs": 1753,
+      "maxMs": 4436
+    }
+  },
+  "retrieval": {
+    "answerableAsked": 19,
+    "grounded": 19,
+    "retrievedSomething": 19,
+    "unanswerableAsked": 5,
+    "correctlyRefused": 4,
+    "inventedCitations": 0,
+    "answeredUnanswerable": [
+      "What is the recommended torque setting for a helicopter rotor bolt?"
+    ],
+    "retrievalLatency": {
+      "samples": 24,
+      "meanMs": 19,
+      "medianMs": 20,
+      "minMs": 16,
+      "maxMs": 30
+    },
+    "answerLatency": {
+      "samples": 24,
+      "meanMs": 4011,
+      "medianMs": 4370,
+      "minMs": 2045,
+      "maxMs": 5394
+    }
+  },
+  "embeddingLatency": {
+    "samples": 20,
+    "meanMs": 5,
+    "medianMs": 6,
+    "minMs": 5,
+    "maxMs": 7
+  },
+  "notes": [
+    "500 items embedded before retrieval was measured"
+  ]
+}

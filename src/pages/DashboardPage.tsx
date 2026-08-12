@@ -6,11 +6,14 @@ import { NodeIdentityPanel } from "../features/dashboard/NodeIdentityPanel";
 import { SystemStatusPanel } from "../features/dashboard/SystemStatusPanel";
 import { CreateIncidentDialog } from "../features/incidents/CreateIncidentDialog";
 import { IncidentTable } from "../features/incidents/IncidentTable";
+import { AskSecureMesh } from "../features/intelligence/AskSecureMesh";
+import { IntelligencePanel } from "../features/intelligence/IntelligencePanel";
 import { PeerPanel } from "../features/network/PeerPanel";
 import {
   CoreError,
   getIncidents,
   getLocalAuthority,
+  getIntelligenceStatus,
   getNetworkStatus,
   getNodeIdentity,
   getPeers,
@@ -18,6 +21,7 @@ import {
 } from "../lib/ipc";
 import type {
   Incident,
+  IntelligenceStatus,
   LocalAuthority,
   NetworkStatus,
   Peer,
@@ -45,6 +49,7 @@ export function DashboardPage() {
   const [network, setNetwork] = useState<NetworkStatus | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
   const [authority, setAuthority] = useState<LocalAuthority | null>(null);
+  const [intelligence, setIntelligence] = useState<IntelligenceStatus | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -62,6 +67,7 @@ export function DashboardPage() {
         nextPeers,
         nextIncidents,
         nextAuthority,
+        nextIntelligence,
       ] = await Promise.all([
         getNodeIdentity(),
         getSystemStatus(),
@@ -69,6 +75,7 @@ export function DashboardPage() {
         getPeers(),
         getIncidents(),
         getLocalAuthority(),
+        getIntelligenceStatus(),
       ]);
 
       setIdentity(nextIdentity);
@@ -77,6 +84,7 @@ export function DashboardPage() {
       setPeers(nextPeers);
       setIncidents(nextIncidents);
       setAuthority(nextAuthority);
+      setIntelligence(nextIntelligence);
       setError(null);
     } catch (raw) {
       const coreError = raw as CoreError;
@@ -134,6 +142,8 @@ export function DashboardPage() {
             <IncidentTable incidents={incidents} loading={loading} />
           </Panel>
 
+          <AskSecureMesh status={intelligence} />
+
           <div style={{ display: "grid", gap: "var(--space-5)" }}>
             <PeerPanel
               peers={peers}
@@ -141,6 +151,7 @@ export function DashboardPage() {
               authority={authority}
               onChanged={() => void refresh()}
             />
+            <IntelligencePanel status={intelligence} />
             <SystemStatusPanel status={systemStatus} />
             <NodeIdentityPanel identity={identity} />
           </div>

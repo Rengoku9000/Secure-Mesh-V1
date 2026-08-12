@@ -12,7 +12,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   CoreErrorCode,
+  GroundedAnswer,
   Incident,
+  IncidentAnalysis,
+  IndexReport,
+  IntelligenceStatus,
+  KnowledgeDocument,
   LocalAuthority,
   NetworkStatus,
   NewIncident,
@@ -145,6 +150,59 @@ export function rejectPeer(nodeId: string, note?: string): Promise<TrustState> {
 /** Withdraws authorization from a peer. */
 export function revokePeer(nodeId: string, note?: string): Promise<TrustState> {
   return call<TrustState>("revoke_peer", { nodeId, note: note ?? null });
+}
+
+// --- Local intelligence (Phase 3) ---
+//
+// Every call here goes to a model running on this device. There is no key to
+// configure and no request that leaves the machine.
+
+/** Model, readiness, and index sizes for the Intelligence panel. */
+export function getIntelligenceStatus(): Promise<IntelligenceStatus> {
+  return call<IntelligenceStatus>("get_intelligence_status");
+}
+
+/**
+ * Analyses one incident with the local model.
+ *
+ * Slow — seconds on CPU — so this is always an explicit operator action, never
+ * automatic. Analysis must not sit on the path of incident capture.
+ */
+export function analyseIncident(incidentId: string): Promise<IncidentAnalysis> {
+  return call<IncidentAnalysis>("analyse_incident", { incidentId });
+}
+
+/**
+ * The stored analysis for an incident.
+ *
+ * Resolves to `null` rather than rejecting when no model is provisioned, so the
+ * incident view renders identically on a node without AI.
+ */
+export function getIncidentAnalysis(
+  incidentId: string,
+): Promise<IncidentAnalysis | null> {
+  return call<IncidentAnalysis | null>("get_incident_analysis", { incidentId });
+}
+
+/** Answers a question from this node's own records. */
+export function askSecureMesh(
+  question: string,
+  topK?: number,
+): Promise<GroundedAnswer> {
+  return call<GroundedAnswer>("ask_securemesh", {
+    question,
+    topK: topK ?? null,
+  });
+}
+
+/** Embeds anything not yet indexed. */
+export function indexIntelligence(): Promise<IndexReport> {
+  return call<IndexReport>("index_intelligence");
+}
+
+/** Documents in the local knowledge base. */
+export function getKnowledgeDocuments(): Promise<KnowledgeDocument[]> {
+  return call<KnowledgeDocument[]>("get_knowledge_documents");
 }
 
 /** The local trust audit log, newest first. */

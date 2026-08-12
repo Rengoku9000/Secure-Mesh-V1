@@ -234,6 +234,28 @@ Deleting the directory resets the node to a first launch.
 - Validates all input in Rust, never in the frontend
 - Light and dark themes from one token set
 
+**Phase 3 — local intelligence**
+
+- **Local inference only.** No API, no key, no endpoint, and nothing downloaded
+  — models are files an operator provisions. Verified structurally: there is no
+  HTTP client in the dependency tree, and the runtime client takes a *port*, not
+  a host
+- Incident classification and structured extraction via schema-constrained
+  decoding, so output always parses — then it is parsed, validated and
+  normalised anyway, because a model is untrusted input
+- Local embeddings and vector retrieval over both knowledge documents and
+  incidents
+- Grounded question answering where **citation is a required schema field, not
+  a request** — the model cannot answer without naming the passages it used.
+  Those numbers are verified against what was actually supplied, invented ones
+  are discarded and counted, and a question retrieval cannot serve is refused
+  without calling the model at all. Measured: asking in prose grounded 0 of 19
+  answers; requiring it in the schema grounded 19 of 19
+- **AI is a layer, never a dependency.** A node with no model keeps capturing,
+  replicating and serving; it reports intelligence as unavailable
+- The model never overwrites an operator's judgement — its severity is stored
+  beside theirs, and disagreement is surfaced
+
 **Phase 2.6 — deterministic synchronisation**
 
 - Replication is **caused**, not waited for: every legitimate cause —
@@ -320,11 +342,15 @@ Full analysis: [`docs/security/SECURITY.md`](docs/security/SECURITY.md).
 | **1** | Node foundation: identity, storage, incidents, dashboard | ✅ **Complete** |
 | **2** | P2P mesh: libp2p, QUIC, authenticated peers, signed events, offline sync | ✅ **Complete** |
 | **2.5** | Peer trust: enrollment, authorization, capabilities, revocation, audit | ✅ **Complete** |
-| **2.6** | Deterministic sync: explicit lifecycle, real triggers, observability | ✅ **Complete** |
-| **3** | Local inference: classification, extraction, summarisation | 📋 Designed |
-| **4** | Local RAG: embeddings, vector index, grounded answers | 📋 Designed |
+| **2.6** | Deterministic synchronisation: explicit triggers, link lifecycle | ✅ **Complete** |
+| **2.75** | Mesh hardening: replicated revocation, out-of-band verification, quotas | 📋 Next |
+| **3** | Local AI and RAG: inference, embeddings, retrieval, grounded answers | ✅ **Complete** |
 | **5** | Confidential computing: TPM-backed keys, encrypted storage, TEE | 🔍 Research |
 | **6** | Physical node: edge compute, secure element, LoRa, GNSS, battery | 🔍 Research |
+
+Phase 3 absorbed what was planned as Phase 4 (local RAG): both need the same
+runtime, provisioning story and trust boundary, and splitting them would have
+meant building all three twice.
 
 Details and per-phase exit criteria:
 [`docs/architecture/ROADMAP.md`](docs/architecture/ROADMAP.md).
@@ -357,6 +383,9 @@ calls for it.
 | [`docs/security/SECURITY.md`](docs/security/SECURITY.md) | Threat assumptions, trust boundaries, implemented controls, known limitations |
 | [`docs/architecture/ROADMAP.md`](docs/architecture/ROADMAP.md) | Phased plan with exit criteria and open research questions |
 | [`docs/demo/DEMO.md`](docs/demo/DEMO.md) | Five-minute demo script |
+| [`docs/ai/PROVISIONING.md`](docs/ai/PROVISIONING.md) | Installing the local model and runtime by hand — nothing is downloaded |
+| [`docs/ai/EVALUATION.md`](docs/ai/EVALUATION.md) | Measured accuracy, latency and grounding, with method and limits |
+| [`ai/models/README.md`](ai/models/README.md) | Model provenance: versions, licences, checksums, hardware |
 
 ---
 

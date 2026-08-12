@@ -29,6 +29,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "peer_trust",
         sql: include_str!("../../migrations/003_peer_trust.sql"),
     },
+    Migration {
+        version: 4,
+        name: "local_intelligence",
+        sql: include_str!("../../migrations/004_local_intelligence.sql"),
+    },
 ];
 
 struct Migration {
@@ -224,6 +229,10 @@ mod tests {
             "events",
             "event_conflicts",
             "sync_watermarks",
+            "incident_analyses",
+            "knowledge_documents",
+            "knowledge_chunks",
+            "embeddings",
             "peer_ack_watermarks",
             "incident_observations",
             "outbound_queue",

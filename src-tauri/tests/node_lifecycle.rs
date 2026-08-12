@@ -4,6 +4,10 @@
 //! These tests deliberately use real on-disk directories rather than in-memory
 //! substitutes. Phase 1's central claim is that a node keeps its identity and
 //! its records across a restart, and only real files can demonstrate that.
+//!
+//! Phase 3 added local intelligence above this layer, and nothing here changed:
+//! a node's lifecycle does not depend on whether a model is provisioned. The
+//! AI-specific counterpart is `ai_boundary.rs`.
 
 use securemesh_lib::domain::{NewIncident, Severity, SyncStatus};
 use securemesh_lib::NodeRuntime;

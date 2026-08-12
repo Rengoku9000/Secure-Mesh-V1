@@ -1,5 +1,9 @@
 //! Synchronisation must be *caused*, not waited for.
 //!
+//! Phase 3 note: these tests remain valid unchanged. Local intelligence is a
+//! layer above replication and cannot influence it, so none of the guarantees
+//! asserted here depend on whether a model is present.
+//!
 //! These tests deliberately never call `request_sync()`. They drive the engine
 //! only by ticking it — the equivalent of the application processing whatever
 //! the transport delivered, with **the periodic timer removed**.

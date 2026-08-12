@@ -48,10 +48,14 @@ secrets/
 .env.*
 !.env.example
 
-# Local AI model weights (large, fetched out of band; see docs/architecture/ROADMAP.md)
+# Local AI model weights (large, provisioned out of band; see docs/ai/PROVISIONING.md)
 ai/models/*
 !ai/models/.gitkeep
 !ai/models/README.md
 *.gguf
 *.onnx
 *.safetensors
+
+# Local inference runtime: third-party prebuilt binaries, provisioned by the
+# operator and verified against ai/models/README.md. Never vendored here.
+ai/runtime/

@@ -366,6 +366,84 @@ records that **the operator of this device decides what this device accepts**,
 which is true whether or not it is written down. There is no issuer, no
 certificate chain, and no delegation. See §6.14 for what this does not do.
 
+### 5.15 The AI trust boundary
+
+Phase 3 introduced a component that consumes untrusted text and produces
+untrusted text. It is contained by **structure, not by rules**.
+
+**What the intelligence layer can reach.** Its fields are the boundary:
+
+```rust
+pub struct IntelligenceService {
+    database: Arc<Database>,
+    generator: Arc<dyn LocalInferenceEngine>,
+    embedder: Arc<dyn EmbeddingEngine>,
+}
+```
+
+A database handle and two engines. No `NodeIdentity`, no `KeyStore`, no
+`SyncEngine`, no filesystem access. A model cannot sign, enrol a peer, revoke
+one, or read a key because **no code path from the model to those things
+exists** — not because a check rejects the attempt. `tests/ai_boundary.rs`
+asserts this over the source, so a future edit that widens the boundary fails
+the build rather than passing unnoticed.
+
+**Model output is untrusted input.** It travels the same path as anything from
+the network:
+
+```text
+   model output ──▶ parse ──▶ validate ──▶ normalise ──▶ stored as derived
+                      │          │
+                      └──────────┴──▶ rejected, and nothing is stored
+```
+
+`RawAnalysis` is the untrusted shape and has no path to storage except
+`validate`. It uses `deny_unknown_fields`, so a model cannot even *express* a
+field like `trust_state`. Free text is length-bounded, closed sets degrade to
+`OTHER`/`UNKNOWN` rather than admitting invented values, and confidence is
+clamped.
+
+**Prompt injection is contained, not prevented.** An incident description is
+attacker-influenced — more so once replication carries other nodes' records.
+Text is fenced and stripped of its own fence markers, and output is
+schema-constrained. None of that makes a model immune to being fooled. What
+bounds the damage is that a fooled model can only produce a wrong *analysis*:
+it has no capability to misuse. That is the defence, and it is structural.
+
+**The model never overrides a human.** An analysis carries its own severity,
+stored separately from the operator's. Silently rewriting a CRITICAL incident to
+LOW on a model's say-so would be the worst available failure, so the two are
+shown side by side and disagreement is surfaced.
+
+**Derived intelligence is disposable and local.** Analyses and vectors are not
+replicated: an inference is an opinion produced by a particular model, and two
+nodes running different models will legitimately disagree. Deleting every row of
+derived data leaves the operational record intact.
+
+### 5.16 Local inference has no network dependency
+
+| Property | Mechanism |
+|---|---|
+| No cloud AI | No API, no key, no endpoint. Models are local files an operator provisioned |
+| No automatic downloads | Nothing is fetched, at startup or ever |
+| No HTTP client | Verified absent from the dependency tree (§5.11) |
+| Runtime reachable only locally | `src/ai/loopback_http.rs` takes a port and builds its address from `Ipv4Addr::LOCALHOST`; there is no hostname parameter and no name resolution on that path |
+| Failure isolation | The runtime is a child process. A model that crashes or exhausts memory takes down that process, not the node |
+
+**Verified by measurement, not only by argument.** Socket endpoints for the
+application and both model servers were sampled while the evaluation was mid-run,
+across both the extraction and retrieval phases, on two separate runs:
+**zero non-loopback endpoints in every sample, and zero UDP endpoints.** Both
+servers bind `127.0.0.1` explicitly; the only connection is the application's own
+hop to them. Full output in `docs/ai/EVALUATION.md`.
+
+**Stated precisely.** `rustls` and `hickory-proto` are in the dependency tree,
+both via `libp2p` for the Phase 2 mesh — the latter through `libp2p-mdns`, which
+parses DNS-format packets on the local multicast group rather than resolving
+names against a server. Neither is reachable from the AI path. The claim is "no
+HTTP client, and no name resolution on the inference path", not "no networking
+crates at all": SecureMesh is a mesh and necessarily has a network stack.
+
 ### 5.9 Hostile input from the network
 
 All of the following are tested (`tests/mesh_sync.rs`, `networking::protocol`):
@@ -560,6 +638,53 @@ operator faced with an unfamiliar node ID has no in-band way to confirm it
 belongs to the device they intend to enroll. Out-of-band verification — reading
 the node ID off the other device, a QR code, a pre-shared roster — is required
 and is **not** provided by the software.
+
+### 6.17 A model can be fooled into producing a wrong analysis
+
+Prompt injection is contained (§5.15), not prevented. An incident description
+crafted to mislead can produce a misleading analysis — a wrong category, an
+understated severity, a summary that omits something important.
+
+What it cannot do is act. The consequence is bounded to derived data, which is
+disposable and which the UI marks as model output rather than fact. An operator
+reading an analysis is reading an opinion, and the interface says so.
+
+### 6.18 Local inference is not confidential computing
+
+The model runs in an ordinary child process. Its memory is readable by anything
+running as that user, and the prompts it receives — which include incident text
+— are visible to the operating system.
+
+The interface is *shaped* so a trusted backend could replace it without an
+application rewrite: `LocalInferenceEngine` passes plain text and returns plain
+text, with no shared memory and no callback. **That is preparation, not a
+property.** Nothing in Phase 3 is confidential computing, and it must not be
+described as such. See §7.
+
+### 6.19 Retrieval quality is not answer correctness
+
+Grounding is checked at the level of *citation*. The answer schema requires a
+`sources` field, so a model cannot answer without naming the passages it used;
+each number is then verified against what was actually supplied, and any that
+was not is discarded and counted in `droppedCitations`. Nothing verifies that
+the answer's claims follow from the passage it cites.
+
+A model can therefore cite a real source and still state something the source
+does not support — or cite a passage it did not actually use. The UI
+distinguishes grounded from ungrounded answers and surfaces dropped citations,
+which is a weaker guarantee than "the answer is correct" and is labelled
+accordingly.
+
+### 6.20 Evaluation figures come from synthetic data
+
+Accuracy in `docs/ai/EVALUATION.md` is measured against a generated corpus with
+templated phrasing. Real field reports are messier, so those numbers are an
+upper bound on a much easier task — not a prediction of field performance.
+
+Two of the metrics are weaker than they look, and `EVALUATION.md` says so in
+detail: severity accuracy is measured against a convention the model is never
+told, part of which is unsignalled in the text; and the refusal set is five
+questions, which bounds how much that rate can be trusted.
 
 ### 6.16 A trusted peer is trusted for everything in scope
 

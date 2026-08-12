@@ -844,6 +844,183 @@ body {
   color: var(--text-muted);
 }
 
+/* --- Local intelligence ------------------------------------------------- */
+
+.intelligence-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 700;
+}
+
+.intelligence-detail {
+  margin: var(--space-3) 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.intelligence-detail--reassurance {
+  color: var(--text-secondary);
+}
+
+.answer {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* The grounding badge carries the distinction the UI exists to make, so it is
+   a label rather than a colour alone. */
+.answer__badge {
+  display: inline-block;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  margin-bottom: var(--space-3);
+}
+
+.answer__badge--grounded {
+  color: var(--state-ok);
+  background: var(--state-ok-soft);
+}
+
+.answer__badge--ungrounded {
+  color: var(--state-degraded);
+  background: var(--state-degraded-soft);
+}
+
+.answer__badge--refused {
+  color: var(--text-secondary);
+  background: var(--state-inactive-soft);
+}
+
+.answer__text {
+  margin: 0 0 var(--space-3);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.answer__heading {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.answer__timing {
+  margin: var(--space-3) 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.source-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.source {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+}
+
+/* A cited source is marked, so "retrieved" and "actually used" stay visibly
+   different. */
+.source--cited {
+  border-color: var(--accent);
+}
+
+.source__header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-1);
+}
+
+.source__marker {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.source__title {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.source__score {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.source__uncited {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.source__excerpt {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.analysis {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.analysis__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.analysis__fields {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.analysis__summary {
+  font-family: var(--font-sans);
+  line-height: 1.55;
+}
+
+.analysis__severity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  font-family: var(--font-sans);
+}
+
+/* Model and operator disagreeing is worth surfacing, not hiding. */
+.analysis__disagreement {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--state-degraded);
+}
+
 /* --- Misc --------------------------------------------------------------- */
 
 .offline-banner {

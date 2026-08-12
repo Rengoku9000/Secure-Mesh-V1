@@ -432,7 +432,7 @@ impl Database {
 /// Materialises an event into the tables the UI reads.
 ///
 /// Runs inside the caller's transaction. Every write is idempotent, so
-/// re-projecting an event that is already materialised is harmless â€” which is
+/// re-projecting an event that is already materialised is harmless — which is
 /// what allows the projection to be rebuilt from the log if it is ever lost.
 fn project_event(
     transaction: &rusqlite::Transaction<'_>,

@@ -12,6 +12,7 @@
 
 pub mod identity;
 pub mod incidents;
+pub mod intelligence;
 pub mod system;
 pub mod trust;
 
@@ -20,6 +21,7 @@ pub mod trust;
 // needs both to resolve at this path.
 pub use identity::*;
 pub use incidents::*;
+pub use intelligence::*;
 pub use system::*;
 pub use trust::*;
 

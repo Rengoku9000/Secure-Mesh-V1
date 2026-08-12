@@ -131,34 +131,35 @@ See `docs/architecture/ARCHITECTURE.md` §5.4b.
 | Durable audit log for non-trust events | §6.4 |
 | Two-laptop test on an isolated physical network | The one claim not yet demonstrated on separate hardware |
 
-## Phase 3 — Local inference 📋
+## Phase 3 — Local inference and local RAG ✅ COMPLETE
 
-**Goal:** classify, extract from, and summarise incidents entirely on-device.
+**Goal:** classify, extract from, and summarise incidents entirely on-device,
+and answer questions from local records with verifiable sources.
 
-| Item | Notes |
+Absorbed what was planned as Phase 4: the two need the same runtime, the same
+provisioning story and the same trust boundary, and splitting them would have
+meant building that twice.
+
+| Item | Status |
 |---|---|
-| Inference runtime selection | 🔍 llama.cpp vs Candle vs ONNX Runtime — depends on Phase 6 hardware |
-| Open-weight quantised model, local file | Licence must permit the intended use |
-| Model integrity verification before load | Hash-pinned; a model file is executable input |
-| Classification, entity extraction, summarisation | Per ARCHITECTURE.md §6 |
-| Graceful degradation with no model installed | Already the current behaviour |
+| Inference runtime selection | ✅ llama.cpp `b10375` prebuilt, supervised child process, CPU-only — reasoning in `ai/models/README.md` |
+| Open-weight quantised model, local file | ✅ Qwen2.5-1.5B-Instruct Q4_K_M (Apache-2.0); bge-small-en-v1.5 Q8_0 (MIT) |
+| Model integrity verification before load | ✅ SHA-256 recorded and verified by the operator at provisioning time |
+| Classification, entity extraction, summarisation | ✅ Schema-constrained, then re-validated as untrusted input |
+| Graceful degradation with no model installed | ✅ `Option` on the runtime; asserted by `tests/ai_boundary.rs` |
+| Text extraction and chunking | ✅ Sentence-boundary chunking with overlap |
+| Local embedding model | ✅ 384-dim, local, ~6 ms per text |
+| Local vector index | ✅ Vectors as `BLOB`s in the same SQLite file — one file to back up and encrypt. Brute-force cosine at 18 ms over 500 items; `sqlite-vec` is a later optimisation, not a need |
+| Retrieval + grounded generation with citations | ✅ Citation is a **required schema field**, then verified against the passages supplied |
+| Openly licensed, non-sensitive corpus | ✅ Deterministic synthetic generator, labelled `SYNTHETIC` in storage |
+| Measured evaluation | ✅ `docs/ai/EVALUATION.md` |
 
-**Constraint:** the "AI" status row must keep reporting truthfully. A node with
-no model reports "not installed" and keeps working.
+**Constraint held:** the "AI" status row reports truthfully. A node with no
+model reports why, and keeps working.
 
----
-
-## Phase 4 — Local RAG 📋
-
-**Goal:** answer questions from local documents with citations, offline.
-
-| Item | Notes |
-|---|---|
-| Text extraction and chunking | |
-| Local embedding model | |
-| Local vector index | 🔍 FAISS vs `sqlite-vec` — the latter keeps one file to back up, encrypt, and sync |
-| Retrieval + grounded generation with citations | |
-| Openly licensed, non-sensitive corpus | Per the data policy |
+**Not done, deliberately:** confidential inference (Phase 5 — a child process is
+not a TEE and is not described as one), GPU or NPU acceleration, and any
+automatic model download.
 
 ---
 

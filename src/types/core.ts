@@ -191,6 +191,118 @@ export interface Observation {
   createdAt: string;
 }
 
+// --- Local intelligence (Phase 3) ---
+
+/** Category a local model assigned. Mirrors `domain::IncidentCategory`. */
+export type IncidentCategory =
+  | "INFRASTRUCTURE"
+  | "FLOODING"
+  | "FIRE"
+  | "MEDICAL"
+  | "EVACUATION"
+  | "POWER"
+  | "COMMUNICATIONS"
+  | "RESOURCE_SHORTAGE"
+  | "EARTHQUAKE"
+  | "SEVERE_WEATHER"
+  | "ROAD_BLOCKAGE"
+  | "OTHER";
+
+/** Mirrors `domain::AccessStatus`. */
+export type AccessStatus = "OPEN" | "RESTRICTED" | "BLOCKED" | "UNKNOWN";
+
+/**
+ * Derived intelligence about an incident. Mirrors `domain::IncidentAnalysis`.
+ *
+ * Derived, not authoritative: the incident and its signed event remain the
+ * source of truth, and `severity` here is the *model's* opinion, deliberately
+ * separate from the severity an operator set.
+ */
+export interface IncidentAnalysis {
+  incidentId: string;
+  category: IncidentCategory;
+  severity: Severity;
+  summary: string;
+  asset: string | null;
+  cause: string | null;
+  accessStatus: AccessStatus;
+  entities: string[];
+  affectedResources: string[];
+  locationHint: string | null;
+  /** Model-stated confidence, clamped to 0..1. Absent when it gave none. */
+  confidence: number | null;
+  modelId: string;
+  latencyMs: number;
+  generatedAt: string;
+}
+
+/** Mirrors `ai::IntelligenceStatus`. */
+export interface IntelligenceStatus {
+  state: "READY" | "LOADING" | "UNAVAILABLE";
+  detail: string;
+  modelName: string | null;
+  modelId: string | null;
+  quantisation: string | null;
+  /** Always "LOCAL". */
+  inference: string;
+  /** Always "NONE". */
+  networkDependency: string;
+  embeddingModel: string | null;
+  analysesStored: number;
+  documentsIndexed: number;
+  chunksIndexed: number;
+  vectorsStored: number;
+}
+
+/** A passage an answer was built from. Mirrors `ai::rag::AnswerSource`. */
+export interface AnswerSource {
+  marker: string;
+  kind: "KNOWLEDGE_CHUNK" | "INCIDENT";
+  subjectId: string;
+  title: string;
+  score: number;
+  excerpt: string;
+  /** Whether the model actually cited this, as opposed to merely being offered it. */
+  cited: boolean;
+}
+
+/** A grounded answer. Mirrors `ai::rag::GroundedAnswer`. */
+export interface GroundedAnswer {
+  question: string;
+  answer: string;
+  sources: AnswerSource[];
+  /** True when the answer cites at least one supplied passage. */
+  grounded: boolean;
+  /** True when the corpus could not answer and the refusal was returned. */
+  refused: boolean;
+  /**
+   * Source numbers the model returned that did not exist. They were dropped
+   * before reaching here; a non-zero count is a reason to distrust the answer.
+   */
+  droppedCitations: number;
+  modelId: string;
+  retrievalMs: number;
+  generationMs: number;
+}
+
+/** Mirrors `ai::IndexReport`. */
+export interface IndexReport {
+  chunksEmbedded: number;
+  incidentsEmbedded: number;
+  failures: number;
+}
+
+/** Mirrors `storage::intelligence::KnowledgeDocument`. */
+export interface KnowledgeDocument {
+  id: string;
+  title: string;
+  source: string;
+  sourceType: string;
+  contentHash: string;
+  importedAt: string;
+  chunkCount: number;
+}
+
 /** Error codes the core can return. Mirrors `error::CoreError::code`. */
 export type CoreErrorCode =
   | "STORAGE_ERROR"

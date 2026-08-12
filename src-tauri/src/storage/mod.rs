@@ -16,6 +16,7 @@
 
 pub mod events;
 pub mod incidents;
+pub mod intelligence;
 pub mod migrations;
 pub mod nodes;
 pub mod trust;

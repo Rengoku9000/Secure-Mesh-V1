@@ -2,7 +2,7 @@
 //!
 //! These tests run complete `NodeRuntime`s over the deterministic loopback
 //! transport. That is a real [`MeshTransport`] implementation, so the code
-//! under test is the code that ships â€” only the wire is swapped for an
+//! under test is the code that ships — only the wire is swapped for an
 //! in-process one.
 //!
 //! Doing it this way is deliberate. Partition, replay, reordering and restart
@@ -109,7 +109,7 @@ fn settle(nodes: &[&TestNode]) {
 /// From Phase 2.5 a connection alone replicates nothing: the handshake proves
 /// identity, and an explicit operator decision grants authorization. Every test
 /// that expects synchronisation therefore has to enroll, which is exactly the
-/// behaviour change this phase introduces â€” so the step is written out rather
+/// behaviour change this phase introduces — so the step is written out rather
 /// than hidden inside `spawn`.
 fn connect_and_enroll(network: &LoopbackNetwork, a: &TestNode, b: &TestNode) {
     network.connect(&a.node_id, &b.node_id);

@@ -10,6 +10,7 @@
 //!                                                  └──▶  storage   ──▶  SQLite
 //! ```
 
+pub mod ai;
 pub mod commands;
 pub mod domain;
 pub mod error;
@@ -80,6 +81,12 @@ pub fn run() {
             commands::revoke_peer,
             commands::get_trust_audit_log,
             commands::get_link_states,
+            commands::get_intelligence_status,
+            commands::analyse_incident,
+            commands::get_incident_analysis,
+            commands::ask_securemesh,
+            commands::index_intelligence,
+            commands::get_knowledge_documents,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -126,16 +133,93 @@ fn report_frontend_source(config: &tauri::Config) {
 /// network is still fully functional, so the failure is reported and the node
 /// continues standalone rather than refusing to launch.
 fn start_node(data_dir: &std::path::Path) -> CoreResult<NodeRuntime> {
-    match networking::libp2p_transport::Libp2pTransport::start_for_data_dir(data_dir) {
-        Ok(transport) => NodeRuntime::initialize_with_transport(data_dir, Box::new(transport)),
-        Err(error) => {
-            eprintln!(
-                "[securemesh] mesh transport unavailable ({}); continuing standalone",
-                error.message()
-            );
-            NodeRuntime::initialize(data_dir)
+    let mut runtime =
+        match networking::libp2p_transport::Libp2pTransport::start_for_data_dir(data_dir) {
+            Ok(transport) => NodeRuntime::initialize_with_transport(data_dir, Box::new(transport))?,
+            Err(error) => {
+                eprintln!(
+                    "[securemesh] mesh transport unavailable ({}); continuing standalone",
+                    error.message()
+                );
+                NodeRuntime::initialize(data_dir)?
+            }
+        };
+
+    attach_intelligence(&mut runtime);
+    Ok(runtime)
+}
+
+/// Attaches local intelligence if a model has been provisioned.
+///
+/// Deliberately infallible. A missing model, a missing runtime, or a broken one
+/// leaves the node fully functional without intelligence — the AI layer is
+/// never allowed to prevent a node from starting.
+///
+/// **Nothing is downloaded.** The models are located on disk; if they are not
+/// there, the dashboard says so and points at the provisioning instructions.
+fn attach_intelligence(runtime: &mut NodeRuntime) {
+    use ai::{IntelligenceService, LlamaConfig, LlamaServerEngine};
+    use std::sync::Arc;
+
+    // Models live beside the application rather than in the per-node data
+    // directory: they are large, read-only, and shared by every node on the
+    // machine, so copying them per node would waste gigabytes.
+    let Some(root) = project_root() else {
+        eprintln!("[securemesh] could not locate the model directory; intelligence disabled");
+        return;
+    };
+
+    // Ports are derived from the process ID so two nodes on one machine do not
+    // fight over a runtime port.
+    let base_port = 18_000 + (std::process::id() % 1_000) as u16 * 2;
+
+    let generation = LlamaConfig::generation(&root, base_port);
+    let embedding = LlamaConfig::embedding(&root, base_port + 1);
+
+    // Report what is missing rather than failing silently: "AI is unavailable"
+    // is only actionable if an operator can see why.
+    if let Err(reason) = generation.availability() {
+        eprintln!("[securemesh] local intelligence unavailable: {}", reason.detail());
+        return;
+    }
+    if let Err(reason) = embedding.availability() {
+        eprintln!("[securemesh] local intelligence unavailable: {}", reason.detail());
+        return;
+    }
+
+    let database = runtime.database_handle();
+    let service = IntelligenceService::new(
+        database,
+        Arc::new(LlamaServerEngine::new(generation)),
+        Arc::new(LlamaServerEngine::new(embedding)),
+    );
+
+    runtime.attach_intelligence(service);
+    eprintln!("[securemesh] local intelligence attached (models provisioned, no network used)");
+}
+
+/// Locates the directory holding `ai/`.
+///
+/// Checks the executable's own directory first — that is where a staged or
+/// installed build keeps its models — then walks up, which covers running from
+/// `target/debug` during development.
+fn project_root() -> Option<std::path::PathBuf> {
+    if let Ok(explicit) = std::env::var("SECUREMESH_AI_ROOT") {
+        return Some(std::path::PathBuf::from(explicit));
+    }
+
+    let executable = std::env::current_exe().ok()?;
+    let mut directory = executable.parent()?.to_path_buf();
+
+    for _ in 0..6 {
+        if directory.join("ai/models").is_dir() {
+            return Some(directory);
+        }
+        if !directory.pop() {
+            break;
         }
     }
+    None
 }
 
 /// Drives the sync engine.
