@@ -386,6 +386,7 @@ calls for it.
 | [`docs/ai/PROVISIONING.md`](docs/ai/PROVISIONING.md) | Installing the local model and runtime by hand — nothing is downloaded |
 | [`docs/ai/EVALUATION.md`](docs/ai/EVALUATION.md) | Measured accuracy, latency and grounding, with method and limits |
 | [`ai/models/README.md`](ai/models/README.md) | Model provenance: versions, licences, checksums, hardware |
+| [`docs/hardware/PLATFORM_EVALUATION.md`](docs/hardware/PLATFORM_EVALUATION.md) | Phase 4A study: edge platforms, TEE feasibility, what hardware can and cannot protect |
 
 ---
 

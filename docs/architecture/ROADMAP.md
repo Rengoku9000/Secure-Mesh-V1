@@ -163,20 +163,49 @@ automatic model download.
 
 ---
 
+## Phase 4A — Platform feasibility study ✅ COMPLETE
+
+**Goal:** decide what hardware Phase 5 would run on, and what it could honestly
+protect — before buying, flashing, or designing anything.
+
+Deliverable: [`docs/hardware/PLATFORM_EVALUATION.md`](../hardware/PLATFORM_EVALUATION.md).
+Nothing was implemented, purchased, or flashed.
+
+Three findings change the plan below:
+
+- **Confidential LLM inference is not achievable** on this class of hardware. A
+  typical OP-TEE configuration offers ~30 MB for all trusted applications
+  against a 1.04 GB model, and the GPU is unreachable from the secure world.
+  Ruled out, not deferred.
+- **libp2p cannot use a non-exportable key.** Verified in the source of the
+  version we depend on: `KeyPairInner` is a private closed enum and `sign`
+  dispatches on it — there is no signer hook. Transport identity must stay a
+  software key.
+- **`KeyStore` needs a new signature.** `load()` returns the secret bytes, which
+  a hardware store cannot produce. It has to become a signer rather than a
+  vault, and `NodeIdentity::sign` becomes fallible.
+
+Recommended platform: **Jetson Orin Nano 8GB** ($249 dev kit), two units —
+secure-boot fuses are one-way and a mis-fused board is scrap.
+
+---
+
 ## Phase 5 — Confidential computing 🔍
 
 **Goal:** protect keys and sensitive processing from a compromised host.
 
-Read `docs/security/SECURITY.md` §7 before working on this phase. A TPM is not a
-TEE, and a normal OS process is not a TEE.
+Read `docs/security/SECURITY.md` §7 and the Phase 4A study before working on
+this phase. A TPM is not a TEE, and a normal OS process is not a TEE.
 
 | Item | Notes |
 |---|---|
-| TPM 2.0 / secure element `KeyStore` backend | Key generated in and non-extractable from hardware; core calls a signing operation |
-| Database encryption with a TPM-sealed key | Closes SECURITY.md §6.2 |
-| Measured boot | Platform proves what it loaded |
+| `KeyStore` becomes a signer, not a vault | Prerequisite for everything else in this phase. `PLATFORM_EVALUATION.md` §7 |
+| TPM 2.0 / secure element `KeyStore` backend | Key generated in and non-extractable from hardware; core calls a signing operation. On Jetson this is an OP-TEE trusted application, plus the firmware TPM |
+| Transport-key attestation | Because libp2p needs an extractable key, the hardware identity key would sign a certificate over a separate software transport key. Reintroduces custom cryptography Phase 2 removed — weigh carefully. `PLATFORM_EVALUATION.md` §6.1 |
+| Database encryption with a TEE-sealed key | Closes SECURITY.md §6.2. Protects data at rest, not in use |
+| Measured boot | Platform proves what it loaded; fTPM PCRs |
 | Remote attestation | **Only where the chosen platform genuinely supports it** |
-| Confidential inference inside a TEE | Depends on platform capability |
+| ~~Confidential inference inside a TEE~~ | **Ruled out by the Phase 4A study.** Not deferred — not achievable here, and it will not be claimed |
 
 **Hard rule for this phase:** no capability is claimed in documentation, a demo,
 or a presentation until it has been demonstrated on the specific hardware. TEE

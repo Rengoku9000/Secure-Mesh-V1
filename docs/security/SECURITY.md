@@ -683,6 +683,16 @@ text, with no shared memory and no callback. **That is preparation, not a
 property.** Nothing in Phase 3 is confidential computing, and it must not be
 described as such. See §7.
 
+**And on the hardware we would plausibly ship, it never will be.** The Phase 4A
+study (`docs/hardware/PLATFORM_EVALUATION.md` §5) found that a typical OP-TEE
+configuration offers roughly **30 MB** for all trusted applications against a
+**1.04 GB** model, that upstream OP-TEE states TrustZone TEEs are "not equipped
+to support large memory for trusted applications", and that secure-world
+carveouts are unreachable from CUDA — so a TEE-resident model would also lose
+the GPU. Confidential inference is therefore **ruled out, not deferred**. What a
+TEE can realistically protect here is the signing key, which is a genuinely
+valuable but much narrower claim.
+
 ### 6.19 Retrieval quality is not answer correctness
 
 Grounding is checked at the level of *citation*. The answer schema requires a
@@ -761,6 +771,18 @@ To avoid the category errors that are common in this space:
 - **Enrolment does not verify intent.** Approving a node ID authorizes exactly
   that keypair; whether it is the device the operator meant is out-of-band
   (§6.15).
+- **Confidential AI is not on the roadmap, because it is not achievable on this
+  hardware class.** Not "not yet" — the Phase 4A study measured the gap against
+  vendor documentation and found it structural (§6.18,
+  `docs/hardware/PLATFORM_EVALUATION.md` §5).
+- **"Hardware-backed identity" would be an overstatement even after Phase 5.**
+  libp2p cannot use a non-exportable key — verified in the dependency's source —
+  so the transport session key must remain software-held. The accurate claim
+  would be "event and trust signatures are hardware-backed; the transport key is
+  not" (`PLATFORM_EVALUATION.md` §6).
+- **No claim in the Phase 4A study has been demonstrated on hardware.** No board
+  has been bought, flashed, or benchmarked. Every figure there is cited to vendor
+  documentation or marked UNKNOWN.
 
 ---
 
