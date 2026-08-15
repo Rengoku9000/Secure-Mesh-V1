@@ -13,7 +13,7 @@
 //! signatures; see `crate::ai`.
 
 use super::AppState;
-use crate::ai::{GroundedAnswer, IndexReport, IntelligenceStatus};
+use crate::ai::{GroundedAnswer, IncidentIndexState, IndexReport, IntelligenceStatus};
 use crate::domain::IncidentAnalysis;
 use crate::error::CoreResult;
 use crate::storage::intelligence::KnowledgeDocument;
@@ -61,9 +61,24 @@ pub fn ask_securemesh(
 }
 
 /// Embeds anything not yet indexed.
+///
+/// Indexing is automatic — a local write and an applied replication each
+/// trigger a pass — so this exists for a manual retry, not as the mechanism.
 #[tauri::command]
 pub fn index_intelligence(state: State<'_, AppState>) -> CoreResult<IndexReport> {
     state.runtime.index_intelligence()
+}
+
+/// Where each incident stands in the local vector index.
+///
+/// Reported separately from `sync_status` because replication and indexing are
+/// independent: an incident can be shared with every peer and still not be
+/// searchable here, and presenting one as the other would mislead an operator.
+#[tauri::command]
+pub fn get_incident_index_states(
+    state: State<'_, AppState>,
+) -> CoreResult<Vec<IncidentIndexState>> {
+    state.runtime.incident_index_states()
 }
 
 /// Documents in the local knowledge base.

@@ -17,6 +17,7 @@ import type {
   IncidentAnalysis,
   IndexReport,
   IntelligenceStatus,
+  IncidentIndexState,
   KnowledgeDocument,
   LocalAuthority,
   NetworkStatus,
@@ -195,9 +196,20 @@ export function askSecureMesh(
   });
 }
 
-/** Embeds anything not yet indexed. */
+/**
+ * Embeds anything not yet indexed.
+ *
+ * Indexing is automatic — the Rust core triggers a pass after a local write and
+ * after replication applies events — so this is a manual retry, not the
+ * mechanism. The UI must never be the thing that remembers to index.
+ */
 export function indexIntelligence(): Promise<IndexReport> {
   return call<IndexReport>("index_intelligence");
+}
+
+/** Where each incident stands in the local vector index. */
+export function getIncidentIndexStates(): Promise<IncidentIndexState[]> {
+  return call<IncidentIndexState[]>("get_incident_index_states");
 }
 
 /** Documents in the local knowledge base. */

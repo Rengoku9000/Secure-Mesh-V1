@@ -276,6 +276,30 @@ impl IntelligenceService {
         self.database.list_documents()
     }
 
+    /// Incidents that hold no vector for the embedding model in use.
+    ///
+    /// Derived from the absence of a stored vector rather than from a status
+    /// column, so it cannot disagree with what retrieval can actually find: an
+    /// incident is searchable exactly when a vector exists for it.
+    pub fn unindexed_incident_ids(&self, limit: u32) -> CoreResult<Vec<String>> {
+        Ok(self
+            .database
+            .incidents_awaiting_embedding(&self.embedder.model_id(), limit)?
+            .into_iter()
+            .map(|(incident_id, _description)| incident_id)
+            .collect())
+    }
+
+    /// Every incident this node holds, newest first.
+    pub fn incident_ids(&self, limit: u32) -> CoreResult<Vec<String>> {
+        Ok(self
+            .database
+            .list_incidents(Some(limit))?
+            .into_iter()
+            .map(|incident| incident.id)
+            .collect())
+    }
+
     /// Loads the synthetic evaluation corpus as knowledge documents.
     ///
     /// Development and demonstration only. Every record is labelled synthetic

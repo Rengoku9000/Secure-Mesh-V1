@@ -38,6 +38,7 @@ pub mod dataset;
 pub mod embedding;
 pub mod engine;
 pub mod evaluation;
+pub mod indexer;
 pub mod llama;
 pub mod loopback_http;
 pub mod prompt;
@@ -48,6 +49,7 @@ pub use embedding::{Embedding, EmbeddingEngine};
 pub use engine::{
     EngineHealth, GenerationRequest, LocalInferenceEngine, ModelInfo, StructuredRequest,
 };
+pub use indexer::{BackgroundIndexer, IncidentIndexState, IndexState};
 pub use llama::{LlamaConfig, LlamaServerEngine};
 pub use rag::GroundedAnswer;
 pub use service::{IndexReport, IntelligenceService, IntelligenceStatus};

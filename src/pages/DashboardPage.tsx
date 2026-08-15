@@ -11,6 +11,7 @@ import { IntelligencePanel } from "../features/intelligence/IntelligencePanel";
 import { PeerPanel } from "../features/network/PeerPanel";
 import {
   CoreError,
+  getIncidentIndexStates,
   getIncidents,
   getLocalAuthority,
   getIntelligenceStatus,
@@ -21,6 +22,7 @@ import {
 } from "../lib/ipc";
 import type {
   Incident,
+  IncidentIndexState,
   IntelligenceStatus,
   LocalAuthority,
   NetworkStatus,
@@ -61,6 +63,7 @@ export function DashboardPage() {
   const [authority, setAuthority] = useState<LocalAuthority | null>(null);
   const [intelligence, setIntelligence] = useState<IntelligenceStatus | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [indexStates, setIndexStates] = useState<IncidentIndexState[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +79,7 @@ export function DashboardPage() {
         nextNetwork,
         nextPeers,
         nextIncidents,
+        nextIndexStates,
         nextAuthority,
         nextIntelligence,
       ] = await Promise.all([
@@ -83,6 +87,7 @@ export function DashboardPage() {
         getNetworkStatus(),
         getPeers(),
         getIncidents(),
+        getIncidentIndexStates(),
         getLocalAuthority(),
         getIntelligenceStatus(),
       ]);
@@ -91,6 +96,7 @@ export function DashboardPage() {
       setNetwork(nextNetwork);
       setPeers(nextPeers);
       setIncidents(nextIncidents);
+      setIndexStates(nextIndexStates);
       setAuthority(nextAuthority);
       setIntelligence(nextIntelligence);
       setError(null);
@@ -167,7 +173,11 @@ export function DashboardPage() {
               </button>
             }
           >
-            <IncidentTable incidents={incidents} loading={loading} />
+            <IncidentTable
+            incidents={incidents}
+            loading={loading}
+            indexStates={indexStates}
+          />
           </Panel>
 
           <AskSecureMesh status={intelligence} />

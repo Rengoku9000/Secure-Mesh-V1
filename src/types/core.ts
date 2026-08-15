@@ -23,6 +23,21 @@ export const SEVERITIES: readonly Severity[] = [
 /** Whether a record has reached any peer. Mirrors `domain::incident::SyncStatus`. */
 export type SyncStatus = "PENDING" | "SYNCING" | "SYNCED" | "FAILED";
 
+/**
+ * Whether a record is searchable by local AI. Mirrors `ai::indexer::IndexState`.
+ *
+ * Independent of {@link SyncStatus}: an incident can be shared with every peer
+ * and still not be indexed here, because a vector is derived local state that
+ * each node builds for itself rather than something the mesh carries.
+ */
+export type IndexState = "NOT_INDEXED" | "INDEXING" | "INDEXED" | "INDEX_FAILED";
+
+/** Mirrors `ai::indexer::IncidentIndexState`. */
+export interface IncidentIndexState {
+  incidentId: string;
+  state: IndexState;
+}
+
 /** Mirrors `runtime::ComponentState`. */
 export type ComponentState = "OPERATIONAL" | "DEGRADED" | "INACTIVE";
 

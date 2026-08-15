@@ -1,3 +1,4 @@
+import { IndexStateBadge } from "../../components/IndexStateBadge";
 import { SeverityBadge } from "../../components/SeverityBadge";
 import { SyncStatusBadge } from "../../components/SyncStatusBadge";
 import {
@@ -6,15 +7,28 @@ import {
   formatTimestamp,
   shortenId,
 } from "../../lib/format";
-import type { Incident } from "../../types/core";
+import type { Incident, IncidentIndexState, IndexState } from "../../types/core";
 
 interface IncidentTableProps {
   incidents: Incident[];
   loading: boolean;
+  /**
+   * Index state per incident ID. Empty when no model is provisioned, in which
+   * case the AI column is omitted rather than showing a column of blanks.
+   */
+  indexStates: IncidentIndexState[];
 }
 
 /** The incident timeline, newest first. */
-export function IncidentTable({ incidents, loading }: IncidentTableProps) {
+export function IncidentTable({
+  incidents,
+  loading,
+  indexStates,
+}: IncidentTableProps) {
+  const stateFor = new Map<string, IndexState>(
+    indexStates.map((entry) => [entry.incidentId, entry.state]),
+  );
+  const showIndexColumn = indexStates.length > 0;
   if (loading) {
     return (
       <div style={{ padding: "16px 20px", display: "grid", gap: 8 }} aria-busy="true">
@@ -48,6 +62,7 @@ export function IncidentTable({ incidents, loading }: IncidentTableProps) {
             <th scope="col">Location</th>
             <th scope="col">Recorded</th>
             <th scope="col">Sync</th>
+            {showIndexColumn && <th scope="col">AI index</th>}
           </tr>
         </thead>
         <tbody>
@@ -72,6 +87,13 @@ export function IncidentTable({ incidents, loading }: IncidentTableProps) {
               <td className="incident-table__meta">
                 <SyncStatusBadge status={incident.syncStatus} />
               </td>
+              {showIndexColumn && (
+                <td className="incident-table__meta">
+                  <IndexStateBadge
+                    state={stateFor.get(incident.id) ?? "NOT_INDEXED"}
+                  />
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

@@ -86,6 +86,7 @@ pub fn run() {
             commands::get_incident_analysis,
             commands::ask_securemesh,
             commands::index_intelligence,
+            commands::get_incident_index_states,
             commands::get_knowledge_documents,
         ])
         .run(tauri::generate_context!())

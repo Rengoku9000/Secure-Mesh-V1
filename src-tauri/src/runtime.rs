@@ -8,7 +8,10 @@
 //! The runtime is deliberately free of Tauri types so it can be constructed
 //! and driven directly from integration tests.
 
-use crate::ai::{GroundedAnswer, IndexReport, IntelligenceService, IntelligenceStatus};
+use crate::ai::{
+    BackgroundIndexer, GroundedAnswer, IncidentIndexState, IndexReport, IntelligenceService,
+    IntelligenceStatus,
+};
 use crate::domain::event::{EventKind, IncidentCreatedPayload, IncidentObservationPayload};
 use crate::domain::trust::{Capability, PeerRole, TrustEvent, TrustState};
 use crate::domain::IncidentAnalysis;
@@ -53,6 +56,14 @@ pub struct NodeRuntime {
     /// An `Option` rather than a field that must be populated: the type says
     /// that a node without AI is a normal node, not a broken one.
     intelligence: Option<Arc<IntelligenceService>>,
+    /// Keeps the vector index level with the incident log.
+    ///
+    /// Present exactly when `intelligence` is. Held here rather than inside the
+    /// service because the runtime is what observes the two events worth
+    /// indexing after — a local write and an applied replication — and it is
+    /// the only place that can guarantee the invariant for *every* caller,
+    /// whether that is the GUI, a test, or a future CLI.
+    indexer: Option<BackgroundIndexer>,
     /// The mesh, when one is attached. `None` means this node runs standalone,
     /// which is a fully supported mode rather than a failure.
     mesh: Option<Mutex<SyncEngine<Box<dyn MeshTransport>>>>,
@@ -105,6 +116,7 @@ impl NodeRuntime {
             local_append: Mutex::new(()),
             mesh: transport.map(|t| Mutex::new(SyncEngine::new(t))),
             intelligence: None,
+            indexer: None,
         };
         runtime.backfill_legacy_incidents()?;
         Ok(runtime)
@@ -118,8 +130,24 @@ impl NodeRuntime {
         let Some(mesh) = &self.mesh else {
             return Ok(SyncReport::default());
         };
-        let mut engine = mesh.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        engine.tick(&self.database, &self.identity)
+        let report = {
+            let mut engine = mesh.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            engine.tick(&self.database, &self.identity)?
+        };
+
+        // **Index trigger: replication delivered something.** A vector is
+        // derived *local* state, so it is never carried across the mesh — each
+        // node embeds its own copy with its own model. Without this, an incident
+        // that arrived from a peer would replicate perfectly and still be
+        // invisible to that node's own retrieval.
+        //
+        // The engine lock is released first: indexing must not be attempted
+        // while the sync engine is held.
+        if report.events_applied > 0 {
+            self.request_indexing();
+        }
+
+        Ok(report)
     }
 
     /// How many connected peers are authorized, and how many are connected.
@@ -179,7 +207,36 @@ impl NodeRuntime {
     /// this is called and remains so if it never is. Nothing below this point
     /// can make incident capture or replication fail.
     pub fn attach_intelligence(&mut self, service: IntelligenceService) {
-        self.intelligence = Some(Arc::new(service));
+        let service = Arc::new(service);
+        // Starting the worker performs an immediate reconciliation pass, which
+        // is what makes incidents stored before this build — or before a model
+        // was provisioned — searchable without any manual step.
+        self.indexer = Some(BackgroundIndexer::start(Arc::clone(&service)));
+        self.intelligence = Some(service);
+    }
+
+    /// Asks for a vector-index pass.
+    ///
+    /// Deliberately infallible and non-blocking. It is called immediately after
+    /// a commit, and a write that has already succeeded must not be able to fail
+    /// — or be delayed — because a model is slow, missing, or broken. Anything
+    /// not indexed now is found by the next pass, because the database is the
+    /// queue.
+    fn request_indexing(&self) {
+        if let Some(indexer) = &self.indexer {
+            indexer.request();
+        }
+    }
+
+    /// Index state for every incident, for the UI.
+    ///
+    /// Empty when no model is provisioned: a node without intelligence has no
+    /// index to report on, which the UI renders as absence rather than failure.
+    pub fn incident_index_states(&self) -> CoreResult<Vec<IncidentIndexState>> {
+        match &self.indexer {
+            Some(indexer) => indexer.states(),
+            None => Ok(Vec::new()),
+        }
     }
 
     /// The intelligence service, if one is attached.
@@ -541,6 +598,12 @@ impl NodeRuntime {
             AuditOutcome::Success,
             &format!("id={} event={}", validated.id, event.event_id),
         );
+
+        // **Index trigger: a local write.** Strictly after the commit above, so
+        // the incident is already durable and replicable. Embedding is derived
+        // work and happens on another thread; this call cannot block or fail
+        // the creation it follows.
+        self.request_indexing();
 
         // Read back the projection rather than returning the validated value,
         // so the caller sees exactly what was persisted.
