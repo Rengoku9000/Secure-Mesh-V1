@@ -629,12 +629,26 @@ impl NodeRuntime {
                     "Offline",
                     "No mesh transport is attached. This node operates standalone.".to_string(),
                 ),
-                (true, 0) => ComponentStatus::inactive(
-                    "Listening",
-                    "Encrypted QUIC mesh is running. No peers discovered yet — this is normal \
-                     when operating alone."
-                        .to_string(),
-                ),
+                // "Nothing is connected" and "nothing was ever found" are
+                // different states, and saying the second when the first is true
+                // sent an operator hunting for a discovery fault that did not
+                // exist. If this node already holds peer records, say so.
+                (true, 0) => match self.database.count_known_peers().unwrap_or(0) {
+                    0 => ComponentStatus::inactive(
+                        "Listening",
+                        "Encrypted QUIC mesh is running. No peers discovered yet — this is \
+                         normal when operating alone."
+                            .to_string(),
+                    ),
+                    known => ComponentStatus::degraded(
+                        "Disconnected",
+                        format!(
+                            "Encrypted QUIC mesh is running. {known} known peer(s), none \
+                             currently connected — records are held locally until one is \
+                             reachable again."
+                        ),
+                    ),
+                },
                 (true, count) => ComponentStatus::operational(
                     "Connected",
                     format!(

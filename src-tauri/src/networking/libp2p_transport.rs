@@ -71,6 +71,33 @@ const DEFAULT_LISTEN_ADDR: &str = "/ip4/0.0.0.0/udp/0/quic-v1";
 /// How long a request may remain outstanding before libp2p abandons it.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How long an established session may sit with no open stream before libp2p
+/// closes it.
+///
+/// # Why this must be set explicitly
+///
+/// libp2p's default is **10 seconds** (`libp2p-swarm`'s `PoolConfig`), and a
+/// SecureMesh session is idle by design: replication is *caused* by a trigger,
+/// so between triggers there is nothing on the wire. The default therefore tore
+/// down every session ten seconds after the last sync round — measured at
+/// 10.04–10.25 s across eight runs — leaving a node with a `TRUSTED` peer it
+/// could no longer reach.
+///
+/// [`ping::Behaviour`] cannot rescue it: ping's own default interval is
+/// **15 seconds**, so the connection was already gone before the first
+/// keep-alive was due. The timeout has to exceed the ping interval by a
+/// comfortable margin for ping to do the job it is here for.
+///
+/// Recovery was not automatic either. mDNS re-queries every **5 minutes** by
+/// default, and a re-dial only happens on a fresh `Discovered` event, so a node
+/// stayed isolated for minutes rather than seconds.
+///
+/// Five minutes is chosen to sit far above both the ping interval (15 s) and
+/// the reconciliation sweep (60 s), so a healthy link is held open by ping and a
+/// genuinely dead peer is still reclaimed. This is not a keep-alive hack: a peer
+/// that stops answering ping is disconnected promptly, as before.
+const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(300);
+
 /// The combined libp2p behaviour for a SecureMesh node.
 #[derive(NetworkBehaviour)]
 struct SecureMeshBehaviour {
@@ -262,6 +289,7 @@ async fn run_swarm(
             })
         })
         .map_err(|e| CoreError::internal(format!("mesh behaviour setup failed: {e}")))?
+        .with_swarm_config(|config| config.with_idle_connection_timeout(IDLE_CONNECTION_TIMEOUT))
         .build();
 
     let listen_addr: Multiaddr = DEFAULT_LISTEN_ADDR

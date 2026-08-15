@@ -82,6 +82,24 @@ fn wait_until(nodes: &[&MeshNode], label: &str, condition: impl Fn() -> bool) {
     );
 }
 
+/// Ticks both nodes for `duration` **without asking for a sync round**.
+///
+/// The distinction matters. [`wait_until`] calls `request_sync` on every
+/// iteration, which puts a stream on the wire and resets libp2p's idle timer —
+/// so a test built on it can never observe an idle disconnect, which is exactly
+/// why one went unnoticed. Ticking only drains transport events, which is
+/// necessary for the disconnect to be *observed* if it happens, but generates
+/// no traffic of its own.
+fn idle_for(nodes: &[&MeshNode], duration: Duration) {
+    let deadline = Instant::now() + duration;
+    while Instant::now() < deadline {
+        for node in nodes {
+            node.runtime.sync_tick().expect("a tick should not fail");
+        }
+        std::thread::sleep(TICK);
+    }
+}
+
 fn incident(description: &str) -> NewIncident {
     NewIncident {
         description: description.to_string(),
@@ -194,6 +212,96 @@ fn two_nodes_discover_authenticate_and_synchronise_over_quic() {
     assert_eq!(b.runtime.database().count_events().unwrap(), 2);
     assert_eq!(a.runtime.database().count_event_conflicts().unwrap(), 0);
     assert_eq!(b.runtime.database().count_event_conflicts().unwrap(), 0);
+}
+
+/// How long the mesh is left completely quiet before liveness is re-checked.
+///
+/// libp2p's default idle timeout is 10 seconds and closed every session that
+/// long after the last sync round. Fifteen gives a comfortable margin over the
+/// 10.04–10.25 s the failure was actually measured at, while keeping the test
+/// short enough to run routinely.
+const IDLE_WINDOW: Duration = Duration::from_secs(15);
+
+#[test]
+fn a_session_survives_an_idle_period_and_still_replicates() {
+    // The regression this exists for: two TRUSTED peers fell silent, libp2p
+    // closed the connection ten seconds later, and nothing reconnected — mDNS
+    // re-queries only every five minutes. The node was left holding a TRUSTED
+    // peer it could not reach, and because the drop landed ten seconds after
+    // the sync round that an incident had just triggered, it looked as though
+    // creating an incident was what broke the network.
+    let a = spawn();
+    let b = spawn();
+
+    let connected = || {
+        a.runtime
+            .connected_peers()
+            .iter()
+            .any(|peer| peer.node_id == b.node_id)
+            && b.runtime
+                .connected_peers()
+                .iter()
+                .any(|peer| peer.node_id == a.node_id)
+    };
+    wait_until(&[&a, &b], "the two nodes to discover each other", connected);
+
+    a.runtime.approve_peer(&b.node_id, None).unwrap();
+    b.runtime.approve_peer(&a.node_id, None).unwrap();
+
+    // Baseline: replication works before the quiet period.
+    a.runtime
+        .create_incident(incident("before the wait"))
+        .unwrap();
+    wait_until(&[&a, &b], "the first incident to reach B", || {
+        b.runtime.list_incidents(None).unwrap().len() == 1
+    });
+
+    // --- The quiet period -------------------------------------------------
+    idle_for(&[&a, &b], IDLE_WINDOW);
+
+    // NETWORK LIVENESS. Before the fix both sides were empty here.
+    assert!(
+        connected(),
+        "the session must survive {}s of silence; it was closed after ~10s \
+         because libp2p's default idle timeout was never configured",
+        IDLE_WINDOW.as_secs()
+    );
+
+    // Still authorized, and the peer record was never lost.
+    assert_eq!(
+        a.runtime.trust_state_of(&b.node_id).unwrap(),
+        securemesh_lib::domain::TrustState::Trusted
+    );
+
+    // DATA CORRECTNESS. A live-looking link that cannot carry a record would be
+    // a worse failure than an honest disconnect, so liveness is proved by use:
+    // this must replicate on its own, with no manual sync and no reconnect.
+    a.runtime
+        .create_incident(incident("after the wait"))
+        .unwrap();
+    wait_until(&[&a, &b], "a post-idle incident to reach B", || {
+        b.runtime.list_incidents(None).unwrap().len() == 2
+    });
+
+    // And in the other direction, so the fix is not one-sided.
+    b.runtime
+        .create_incident(incident("and back again"))
+        .unwrap();
+    wait_until(&[&a, &b], "B's post-idle incident to reach A", || {
+        a.runtime.list_incidents(None).unwrap().len() == 3
+    });
+
+    // Converged, with no duplicates or conflicts from the extra rounds.
+    assert_eq!(a.runtime.database().count_events().unwrap(), 3);
+    assert_eq!(b.runtime.database().count_events().unwrap(), 3);
+    assert_eq!(a.runtime.database().count_event_conflicts().unwrap(), 0);
+    assert_eq!(b.runtime.database().count_event_conflicts().unwrap(), 0);
+
+    // The connection is still up *after* all of that, not merely during it.
+    assert!(
+        connected(),
+        "the session must remain live after replicating"
+    );
 }
 
 #[test]
