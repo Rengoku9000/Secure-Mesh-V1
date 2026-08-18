@@ -15,6 +15,7 @@ pub mod commands;
 pub mod domain;
 pub mod error;
 pub mod identity;
+pub mod location;
 pub mod networking;
 pub mod runtime;
 pub mod security;
@@ -87,6 +88,9 @@ pub fn run() {
             commands::ask_securemesh,
             commands::index_intelligence,
             commands::get_incident_index_states,
+            commands::get_location_permission,
+            commands::request_location_permission,
+            commands::get_current_location,
             commands::get_knowledge_documents,
         ])
         .run(tauri::generate_context!())

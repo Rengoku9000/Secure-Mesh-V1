@@ -19,6 +19,7 @@ use crate::domain::{Incident, MeshEvent, NewIncident, Observation, SyncStatus};
 use crate::error::{CoreError, CoreResult};
 use crate::identity::keystore::FileKeyStore;
 use crate::identity::{NodeIdentity, PublicIdentity};
+use crate::location::{DeviceLocation, LocationPermission, LocationProvider};
 use crate::networking::{MeshTransport, PeerDescriptor};
 use crate::security::{audit, AuditEvent, AuditOutcome};
 use crate::storage::intelligence::KnowledgeDocument;
@@ -67,6 +68,12 @@ pub struct NodeRuntime {
     /// The mesh, when one is attached. `None` means this node runs standalone,
     /// which is a fully supported mode rather than a failure.
     mesh: Option<Mutex<SyncEngine<Box<dyn MeshTransport>>>>,
+    /// Where device positions come from.
+    ///
+    /// Always present, because "this machine cannot report a position" is itself
+    /// an answer the UI needs, not a reason to leave the field empty. On a
+    /// platform with no provider this is the honest one that says so.
+    location: Box<dyn LocationProvider>,
 }
 
 impl NodeRuntime {
@@ -117,6 +124,7 @@ impl NodeRuntime {
             mesh: transport.map(|t| Mutex::new(SyncEngine::new(t))),
             intelligence: None,
             indexer: None,
+            location: crate::location::platform_provider(),
         };
         runtime.backfill_legacy_incidents()?;
         Ok(runtime)
@@ -192,6 +200,41 @@ impl NodeRuntime {
             .map(|peer| peer.node_id)
             .collect();
         self.database.list_peers(&connected)
+    }
+
+    // --- Device location -------------------------------------------------
+    //
+    // A position is a *snapshot* the operator chooses to attach to an incident.
+    // Nothing here writes to the database, starts a watch, or emits an audit
+    // record: reading a sensor is an observation, not a state change. Once the
+    // operator commits the coordinates, they travel as ordinary incident data —
+    // validated, signed, replicated — with no separate location channel.
+
+    /// Whether this device will report a position. Never prompts.
+    pub fn location_permission(&self) -> LocationPermission {
+        self.location.permission()
+    }
+
+    /// Asks the platform for location access, prompting if it chooses to.
+    ///
+    /// Only ever reached from an explicit operator action, so the form can be
+    /// opened without a system dialog appearing.
+    pub fn request_location_permission(&self) -> LocationPermission {
+        self.location.request_permission()
+    }
+
+    /// Takes one position fix.
+    ///
+    /// Fails rather than guessing when the platform cannot answer: a plausible
+    /// but invented coordinate is far worse than none, because an operator
+    /// cannot tell it apart from a real one.
+    pub fn current_location(&self) -> CoreResult<DeviceLocation> {
+        self.location.current_location()
+    }
+
+    /// Where positions come from on this machine, for diagnostics.
+    pub fn location_provider_name(&self) -> &'static str {
+        self.location.describe()
     }
 
     /// Whether a mesh transport is attached to this node.
@@ -737,6 +780,37 @@ impl NodeRuntime {
                 }
             },
             // Phase 5. Claiming otherwise on a normal OS process would be false.
+            // Reports the *provider and permission* state only. Reading this
+            // never takes a fix: a status row that woke the GPS on every
+            // dashboard refresh would drain a field device for nothing.
+            location: match self.location_permission() {
+                LocationPermission::Granted => ComponentStatus::operational(
+                    "Available",
+                    format!(
+                        "{}. Captured only when requested.",
+                        self.location_provider_name()
+                    ),
+                ),
+                LocationPermission::NotRequested => ComponentStatus::inactive(
+                    "Not requested",
+                    format!(
+                        "{}. No position has been requested on this node.",
+                        self.location_provider_name()
+                    ),
+                ),
+                LocationPermission::Denied => ComponentStatus::degraded(
+                    "Denied",
+                    "Location access was refused. Coordinates can still be entered by hand."
+                        .to_string(),
+                ),
+                LocationPermission::Unavailable => ComponentStatus::inactive(
+                    "Unavailable",
+                    format!(
+                        "{}. Coordinates can be entered by hand.",
+                        self.location_provider_name()
+                    ),
+                ),
+            },
             tee: ComponentStatus::inactive(
                 "Not available",
                 "No trusted execution environment is in use. Keys are held in software."
@@ -847,6 +921,7 @@ pub struct SystemStatus {
     pub identity: ComponentStatus,
     pub network: ComponentStatus,
     pub ai: ComponentStatus,
+    pub location: ComponentStatus,
     pub tee: ComponentStatus,
 }
 

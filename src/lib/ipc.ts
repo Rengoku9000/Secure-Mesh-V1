@@ -12,11 +12,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   CoreErrorCode,
+  DeviceLocation,
   GroundedAnswer,
   Incident,
   IncidentAnalysis,
   IndexReport,
   IntelligenceStatus,
+  LocationPermission,
   IncidentIndexState,
   KnowledgeDocument,
   LocalAuthority,
@@ -210,6 +212,37 @@ export function indexIntelligence(): Promise<IndexReport> {
 /** Where each incident stands in the local vector index. */
 export function getIncidentIndexStates(): Promise<IncidentIndexState[]> {
   return call<IncidentIndexState[]>("get_incident_index_states");
+}
+
+// --- Device location ---
+//
+// The position comes from the operating system on this device. There is no
+// geocoding service, no map tile server and no API key. Reading a position
+// writes nothing: it becomes part of the record only when the operator submits
+// it with an incident.
+
+/** Whether this device will report a position. Never prompts. */
+export function getLocationPermission(): Promise<LocationPermission> {
+  return call<LocationPermission>("get_location_permission");
+}
+
+/**
+ * Asks the platform for location access.
+ *
+ * May show a system prompt, so call it only from an explicit operator action.
+ */
+export function requestLocationPermission(): Promise<LocationPermission> {
+  return call<LocationPermission>("request_location_permission");
+}
+
+/**
+ * Takes one position fix.
+ *
+ * Rejects rather than resolving to a placeholder when the platform cannot
+ * answer — an invented coordinate is indistinguishable from a real one.
+ */
+export function getCurrentLocation(): Promise<DeviceLocation> {
+  return call<DeviceLocation>("get_current_location");
 }
 
 /** Documents in the local knowledge base. */

@@ -32,6 +32,22 @@ sha2 = "0.11.0"
 libp2p = { version = "0.56.0", features = ["ed25519", "quic", "mdns", "request-response", "json", "identify", "ping", "macros", "tokio", "cbor"] }
 tokio = { version = "1.53.1", features = ["rt", "time", "macros"] }
 
+# Device location on Windows, via the platform's own location service.
+#
+# Not a new supply chain: Tauri already pulls `windows` in on this target, so
+# this enables the Geolocation namespace on a crate that is present either way.
+# There is no official Tauri geolocation plugin for desktop — its platform table
+# marks Linux, Windows and macOS unsupported, and its source has no desktop
+# implementation — so the platform API is called directly.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = [
+    "Devices_Geolocation",
+    "Foundation",
+] }
+# Provides the `Async` trait, whose `join()` blocks on a WinRT async
+# operation. Already in the tree beneath `windows`, which does not re-export it.
+windows-future = "0.3"
+
 [dev-dependencies]
 tempfile = "3.27.0"
 uuid = { version = "1.24.0", features = ["v4"] }

@@ -32,6 +32,38 @@ export type SyncStatus = "PENDING" | "SYNCING" | "SYNCED" | "FAILED";
  */
 export type IndexState = "NOT_INDEXED" | "INDEXING" | "INDEXED" | "INDEX_FAILED";
 
+/**
+ * Whether this device will report a position. Mirrors
+ * `location::LocationPermission`.
+ */
+export type LocationPermission =
+  | "NOT_REQUESTED"
+  | "GRANTED"
+  | "DENIED"
+  | "UNAVAILABLE";
+
+/**
+ * How the platform arrived at a position. Mirrors `location::LocationSource`.
+ *
+ * Shown to the operator because the difference matters: a satellite fix is
+ * metres and works with no network, whereas an IP-derived one is city-level and
+ * required the OS to reach the Internet.
+ */
+export type LocationSource = "SATELLITE" | "WIRELESS" | "IP_ADDRESS" | "UNKNOWN";
+
+/** One position fix, exactly as the platform reported it. */
+export interface DeviceLocation {
+  latitude: number;
+  longitude: number;
+  /** Radius of uncertainty in metres, when the platform supplies one. */
+  accuracyMeters: number | null;
+  altitudeMeters: number | null;
+  headingDegrees: number | null;
+  speedMps: number | null;
+  source: LocationSource;
+  capturedAt: string;
+}
+
 /** Mirrors `ai::indexer::IncidentIndexState`. */
 export interface IncidentIndexState {
   incidentId: string;
@@ -68,6 +100,7 @@ export interface SystemStatus {
   identity: ComponentStatus;
   network: ComponentStatus;
   ai: ComponentStatus;
+  location: ComponentStatus;
   tee: ComponentStatus;
 }
 

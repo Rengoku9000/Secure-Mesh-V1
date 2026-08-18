@@ -1,7 +1,42 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Alert } from "../../components/Alert";
-import { CoreError, createIncident } from "../../lib/ipc";
-import { SEVERITIES, type Incident, type Severity } from "../../types/core";
+import {
+  CoreError,
+  createIncident,
+  getCurrentLocation,
+  getLocationPermission,
+  requestLocationPermission,
+} from "../../lib/ipc";
+import {
+  SEVERITIES,
+  type DeviceLocation,
+  type Incident,
+  type LocationPermission,
+  type LocationSource,
+  type Severity,
+} from "../../types/core";
+
+/**
+ * How the position was obtained, in words an operator can act on.
+ *
+ * Only a satellite fix is both precise and independent of a network. Saying
+ * "GPS" for an IP-derived guess would invite someone to drive to a coordinate
+ * that is accurate to a city.
+ */
+const SOURCE_LABEL: Record<LocationSource, string> = {
+  SATELLITE: "Satellite (GNSS)",
+  WIRELESS: "Wi-Fi / cellular estimate",
+  IP_ADDRESS: "IP address estimate",
+  UNKNOWN: "Source not reported",
+};
+
+/** Formats accuracy, or says plainly that the platform did not report it. */
+function formatAccuracy(meters: number | null): string {
+  if (meters === null) {
+    return "unavailable";
+  }
+  return meters < 10 ? `±${meters.toFixed(1)} m` : `±${Math.round(meters)} m`;
+}
 
 interface CreateIncidentDialogProps {
   onClose: () => void;
@@ -35,11 +70,71 @@ export function CreateIncidentDialog({ onClose, onCreated }: CreateIncidentDialo
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // --- Device location ---
+  //
+  // Nothing is captured when the form opens. A position is read only when the
+  // operator asks for one, and what they see before submitting is what gets
+  // stored: a snapshot, not a live feed.
+  const [permission, setPermission] = useState<LocationPermission>("NOT_REQUESTED");
+  const [location, setLocation] = useState<DeviceLocation | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     descriptionRef.current?.focus();
   }, []);
+
+  // Reading the permission state never prompts, so it is safe on mount. It is
+  // only used to decide which button to draw.
+  useEffect(() => {
+    let cancelled = false;
+    void getLocationPermission()
+      .then((state) => {
+        if (!cancelled) setPermission(state);
+      })
+      .catch(() => {
+        if (!cancelled) setPermission("UNAVAILABLE");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * Captures one position and fills the coordinate fields.
+   *
+   * The fields stay editable afterwards: the capture is a convenience, and the
+   * operator remains the authority on where the incident actually was.
+   */
+  async function captureLocation() {
+    setLocating(true);
+    setLocationError(null);
+    try {
+      if (permission !== "GRANTED") {
+        const granted = await requestLocationPermission();
+        setPermission(granted);
+      }
+      const fix = await getCurrentLocation();
+      setLocation(fix);
+      setLatitude(fix.latitude.toFixed(6));
+      setLongitude(fix.longitude.toFixed(6));
+      // A successful fix proves access, whatever the earlier state said.
+      setPermission("GRANTED");
+    } catch (raw) {
+      const coreError = raw as CoreError;
+      setLocation(null);
+      setLocationError(
+        coreError.message ?? "Device location is unavailable on this machine.",
+      );
+      void getLocationPermission()
+        .then(setPermission)
+        .catch(() => setPermission("UNAVAILABLE"));
+    } finally {
+      setLocating(false);
+    }
+  }
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -158,6 +253,81 @@ export function CreateIncidentDialog({ onClose, onCreated }: CreateIncidentDialo
 
             <div className="field-row">
               <div className="field">
+            {/* Location is captured on request only — never when the form
+                opens — and what is shown here is exactly what will be stored. */}
+            <div className="location-capture">
+              <div className="location-capture__header">
+                <span className="field__label">Location</span>
+                {permission === "UNAVAILABLE" && (
+                  <span className="location-capture__badge">no provider</span>
+                )}
+              </div>
+
+              {locationError !== null ? (
+                <div className="location-capture__state location-capture__state--error">
+                  <span className="location-capture__dot location-capture__dot--error" />
+                  <div>
+                    <div className="location-capture__title">Location error</div>
+                    <div className="location-capture__detail">{locationError}</div>
+                    <div className="location-capture__detail">
+                      You can still create this incident, or type coordinates by
+                      hand.
+                    </div>
+                  </div>
+                </div>
+              ) : location === null ? (
+                <div className="location-capture__state">
+                  <span className="location-capture__dot" />
+                  <span className="location-capture__detail">
+                    No location selected
+                  </span>
+                </div>
+              ) : (
+                <div className="location-capture__state">
+                  <span className="location-capture__dot location-capture__dot--ok" />
+                  <dl className="location-capture__fix">
+                    <div>
+                      <dt>Latitude</dt>
+                      <dd className="mono">{location.latitude.toFixed(6)}</dd>
+                    </div>
+                    <div>
+                      <dt>Longitude</dt>
+                      <dd className="mono">{location.longitude.toFixed(6)}</dd>
+                    </div>
+                    <div>
+                      <dt>Accuracy</dt>
+                      <dd className="mono">
+                        {formatAccuracy(location.accuracyMeters)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Source</dt>
+                      <dd>{SOURCE_LABEL[location.source]}</dd>
+                    </div>
+                  </dl>
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="button button--secondary button--compact"
+                onClick={() => void captureLocation()}
+                disabled={locating || permission === "UNAVAILABLE"}
+              >
+                {locating
+                  ? "Locating…"
+                  : location === null
+                    ? "Use current location"
+                    : "Refresh location"}
+              </button>
+
+              <span className="field__hint">
+                {permission === "UNAVAILABLE"
+                  ? "This machine has no location provider. Coordinates can be entered by hand."
+                  : "Captured once, when you ask. The incident keeps the position it was reported at."}
+              </span>
+            </div>
+
                 <label className="field__label" htmlFor="incident-latitude">
                   Latitude
                 </label>

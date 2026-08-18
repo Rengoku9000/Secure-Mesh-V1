@@ -256,6 +256,25 @@ Deleting the directory resets the node to a first launch.
 - The model never overwrites an operator's judgement — its severity is stored
   beside theirs, and disagreement is surfaced
 
+**Device location**
+
+- **Local only.** The position comes from the operating system on this device —
+  no geocoding service, no map tiles, no API key, no network call by SecureMesh
+- Captured **on request**, reviewed, then committed with the incident. Opening
+  the form neither prompts nor reads the sensor
+- **Optional and never blocking**: no receiver, refused permission or a failed
+  fix all leave incident capture, replication and AI indexing untouched
+- A **snapshot**, not tracking — the incident keeps the position it was reported
+  at, and there is no `watchPosition` and no movement history
+- Coordinates travel inside the signed incident event, so a receiving node
+  displays them **without needing location hardware of its own**
+- **Source and accuracy are shown, never assumed.** A desktop without GNSS gets a
+  Wi-Fi or IP estimate; measured here as `Wireless` at ±165 m, and labelled as
+  such rather than as GPS. Only a satellite fix works with no network
+- There is no official Tauri geolocation plugin for desktop — it marks Windows,
+  Linux and macOS unsupported — so the platform API is called directly behind a
+  `LocationProvider` trait that a USB/UART GNSS module can later replace
+
 **Phase 2.6 — deterministic synchronisation**
 
 - Replication is **caused**, not waited for: every legitimate cause —

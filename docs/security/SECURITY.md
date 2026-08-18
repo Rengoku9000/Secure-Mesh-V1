@@ -444,6 +444,38 @@ names against a server. Neither is reachable from the AI path. The claim is "no
 HTTP client, and no name resolution on the inference path", not "no networking
 crates at all": SecureMesh is a mesh and necessarily has a network stack.
 
+### 5.17 Device location is local, optional, and honestly labelled
+
+Location is **incident data**, not a separate channel. It is captured from the
+operating system on this device, reviewed by the operator, and then travels
+inside the ordinary signed incident event — so it inherits incident validation,
+persistence, event signing, peer authorization and QUIC transport unchanged.
+
+| Property | Mechanism |
+|---|---|
+| No online location API | No geocoder, no map tiles, no API key. `tests/incident_location.rs` asserts the location path references no URL, HTTP client or geocoding service |
+| No new endpoint | Nothing is transmitted separately; coordinates ride the existing signed event |
+| Operator-initiated | A position is read only on an explicit action. Rendering the form never prompts and never takes a fix |
+| Optional | An incident with no coordinates is fully valid. No receiver, refused permission or a timed-out fix cannot block capture, replication or indexing |
+| Snapshot | `getCurrentPosition` only. No `watchPosition`, no movement history |
+| Never invented | A provider that cannot answer returns an error. There is no default coordinate and no last-known fallback |
+| Not audited on read | A sensor read is an observation, not a state change (§6.4). `incident.created` already records the coordinates kept |
+
+**Source is reported, not assumed.** A desktop rarely has a GNSS receiver;
+Windows still answers by triangulating Wi-Fi or resolving the IP address. Those
+are city-to-street-block guesses, and obtaining them requires the *operating
+system* to reach Microsoft — SecureMesh makes no such call, but the position is
+not offline-derived either. Each fix therefore carries its source and accuracy
+exactly as the platform reported them. Measured on the development machine:
+`Wireless`, **±165 m** — deliberately not labelled satellite.
+
+Only a satellite fix is offline-capable, and `LocationSource::works_offline`
+is the single place that rule is expressed.
+
+**Location is operationally sensitive.** It is treated as incident content: it
+replicates only to authorized peers, over encrypted QUIC, and only once an
+operator has enrolled them.
+
 ### 5.9 Hostile input from the network
 
 All of the following are tested (`tests/mesh_sync.rs`, `networking::protocol`):
@@ -768,6 +800,12 @@ To avoid the category errors that are common in this space:
   there and nowhere else (§6.13).
 - **A compromised administrator key is not solved.** There is no key rotation,
   no administrator revocation, and no recovery path.
+- **Device location may not be satellite-derived.** On a machine with no GNSS
+  receiver the platform may return a Wi-Fi or IP-based estimate, which is
+  accurate to hundreds of metres or worse and required the OS to reach the
+  network. The source and accuracy are always shown; they must not be described
+  as GPS.
+- **No offline map, no geocoding.** Coordinates are displayed as numbers.
 - **Enrolment does not verify intent.** Approving a node ID authorizes exactly
   that keypair; whether it is the device the operator meant is out-of-band
   (§6.15).

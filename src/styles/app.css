@@ -1077,3 +1077,92 @@ body {
   color: var(--text-primary);
   overflow-wrap: anywhere;
 }
+
+/* --- Device location capture (Create Incident) ---------------------------
+   A position is captured on request, reviewed, then committed with the
+   incident. The three states are visually distinct because "no location",
+   "a fix" and "an error" call for different operator responses. */
+
+.location-capture {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-inset);
+}
+
+.location-capture__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.location-capture__badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.location-capture__state {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.location-capture__dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+}
+
+.location-capture__dot--ok {
+  background: var(--state-ok);
+  border-color: var(--state-ok);
+}
+
+.location-capture__dot--error {
+  background: var(--state-degraded);
+  border-color: var(--state-degraded);
+}
+
+.location-capture__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.location-capture__detail {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.location-capture__fix {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+
+.location-capture__fix dt {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.location-capture__fix dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.location-capture .button {
+  justify-self: start;
+}

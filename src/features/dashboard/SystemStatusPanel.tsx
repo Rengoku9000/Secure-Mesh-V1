@@ -12,6 +12,7 @@ const ROWS: { key: keyof SystemStatus; name: string }[] = [
   { key: "identity", name: "Node identity" },
   { key: "network", name: "Network" },
   { key: "ai", name: "Local AI" },
+  { key: "location", name: "Location" },
   { key: "tee", name: "TEE" },
 ];
 

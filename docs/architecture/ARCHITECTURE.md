@@ -507,6 +507,72 @@ right answer differs between a Jetson-class GPU device and a CPU-only SBC.
 
 ---
 
+## 6c. Device location (IMPLEMENTED)
+
+```text
+   operator presses "Use current location"
+        │
+        ▼
+   LocationProvider (trait)
+        ├── WindowsLocationProvider   Windows.Devices.Geolocation
+        ├── UnavailableProvider       honest "this machine cannot"
+        └── NmeaSerialProvider        USB/UART GNSS — Phase 6, not built
+        │
+        ▼
+   latitude / longitude / accuracy / source   shown for review
+        │  operator confirms
+        ▼
+   NewIncident.validate ──▶ signed event ──▶ QUIC ──▶ peers
+```
+
+**Location is optional incident metadata, captured as a snapshot.** It is not a
+new subsystem: `incidents` and `IncidentCreatedPayload` already carried
+`latitude`/`longitude` as paired, range-validated options, so coordinates
+already replicated. What was missing was a way to *obtain* them from the device.
+No schema change, no migration, no new wire format.
+
+### Why the platform API rather than the Tauri plugin
+
+`tauri-plugin-geolocation` marks Linux, Windows and macOS **unsupported** and
+ships no desktop implementation — its own install instructions target only
+`android` and `ios`. On desktop it would do nothing. The Windows location
+service is therefore called directly through the `windows` crate, which Tauri
+already pulls in on this target, so this adds a feature rather than a supply
+chain.
+
+### The honesty requirement
+
+A desktop rarely has a GNSS receiver. Windows still answers, by triangulating
+Wi-Fi or by looking up the IP address — a guess accurate to a city, and one that
+requires the OS to reach Microsoft. Reporting that as "GPS" would mislead
+someone deciding whether to walk to a coordinate.
+
+So a fix carries its `LocationSource` and accuracy exactly as the platform gave
+them, and the UI shows both. Measured on the development machine: a real fix in
+2212 ms, **source `Wireless`, accuracy ±165 m** — correctly *not* labelled
+satellite, and correctly reported as not offline-capable. Only a satellite fix
+works with no network.
+
+**Nothing is ever invented.** A provider that cannot answer returns an error;
+there is no default coordinate, no last-known fallback, and no placeholder.
+
+### Boundaries
+
+- **Snapshot, not tracking.** `getCurrentPosition` only. No `watchPosition`,
+  no background polling, no movement history. The incident keeps the position it
+  was reported at.
+- **A vector for location is never transmitted separately.** Coordinates travel
+  inside the signed incident event, over the authorized path, so a receiving node
+  needs no location hardware to display where something happened.
+- **Reads are not audited.** Reading a sensor is an observation, not a state
+  change; `incident.created` already records the coordinates that were kept.
+- **No geocoding and no map.** Coordinates are displayed as numbers. An offline
+  map is a separate future phase.
+- **GPS is never a precondition.** No receiver, refused permission or a timed-out
+  fix all leave incident capture, replication and indexing untouched.
+
+---
+
 ## 7. Phase 4 — Local RAG (DESIGN ONLY)
 
 ```

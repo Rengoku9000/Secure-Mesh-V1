@@ -13,6 +13,7 @@
 pub mod identity;
 pub mod incidents;
 pub mod intelligence;
+pub mod location;
 pub mod system;
 pub mod trust;
 
@@ -22,6 +23,7 @@ pub mod trust;
 pub use identity::*;
 pub use incidents::*;
 pub use intelligence::*;
+pub use location::*;
 pub use system::*;
 pub use trust::*;
 
