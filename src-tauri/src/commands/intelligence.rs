@@ -13,7 +13,10 @@
 //! signatures; see `crate::ai`.
 
 use super::AppState;
-use crate::ai::{GroundedAnswer, IncidentIndexState, IndexReport, IntelligenceStatus};
+use crate::ai::knowledge_pack::InstallReport;
+use crate::ai::{
+    GroundedAnswer, IncidentIndexState, IndexReport, IntelligenceStatus, KnowledgeBaseSummary,
+};
 use crate::domain::IncidentAnalysis;
 use crate::error::CoreResult;
 use crate::storage::intelligence::KnowledgeDocument;
@@ -85,4 +88,26 @@ pub fn get_incident_index_states(
 #[tauri::command]
 pub fn get_knowledge_documents(state: State<'_, AppState>) -> CoreResult<Vec<KnowledgeDocument>> {
     state.runtime.knowledge_documents()
+}
+
+/// Installs the operational knowledge pack that ships inside this binary.
+///
+/// Explicitly operator-triggered. Nothing is provisioned at startup and nothing
+/// is fetched: the documents are compiled in, so this command reads no file and
+/// opens no connection.
+///
+/// Safe to call repeatedly — each document is keyed by a content hash, so a
+/// second call reports everything as already present and writes nothing.
+#[tauri::command]
+pub fn install_operational_knowledge(state: State<'_, AppState>) -> CoreResult<InstallReport> {
+    state.runtime.install_operational_knowledge()
+}
+
+/// Counts of what local knowledge this node holds, for the Knowledge Base panel.
+///
+/// Read-only, and valid on a node with no model — it reports an empty knowledge
+/// base rather than refusing.
+#[tauri::command]
+pub fn get_knowledge_summary(state: State<'_, AppState>) -> CoreResult<KnowledgeBaseSummary> {
+    state.runtime.knowledge_summary()
 }

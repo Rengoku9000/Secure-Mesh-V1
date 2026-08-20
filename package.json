@@ -8,7 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "app:stage": "node scripts/stage-app.mjs"
+    "app:stage": "node scripts/stage-app.mjs",
+    "test:map": "node --test \"src/features/map/*.test.ts\"",
+    "map:provision": "cargo run --quiet --manifest-path src-tauri/Cargo.toml --example provision_map"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

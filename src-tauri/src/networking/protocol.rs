@@ -354,6 +354,9 @@ mod tests {
                 severity: "LOW".to_string(),
                 latitude: None,
                 longitude: None,
+                accuracy_meters: None,
+                location_source: crate::domain::LocationSource::Unknown,
+                location_captured_at: None,
             },
         )
         .unwrap()

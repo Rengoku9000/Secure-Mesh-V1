@@ -245,12 +245,28 @@ Deleting the directory resets the node to a first launch.
   normalised anyway, because a model is untrusted input
 - Local embeddings and vector retrieval over both knowledge documents and
   incidents
+- **An operational knowledge pack ships inside the binary**, so a node answers
+  field questions before any incident has been recorded. Eleven emergency-
+  response documents, installed on an explicit operator action — never at
+  startup, never over the network — and idempotent by content hash. Clearly
+  labelled demonstration content, not agency doctrine
+- **Two kinds of knowledge, one index.** Standing guidance and live incidents
+  are ranked against each other, so one answer can cite a procedure *and* a
+  field report — and every citation says which it is, because the two carry very
+  different weight
 - Grounded question answering where **citation is a required schema field, not
   a request** — the model cannot answer without naming the passages it used.
   Those numbers are verified against what was actually supplied, invented ones
   are discarded and counted, and a question retrieval cannot serve is refused
   without calling the model at all. Measured: asking in prose grounded 0 of 19
   answers; requiring it in the schema grounded 19 of 19
+- **An answer is checked against the passages it was given.** Citation alone
+  stopped being enough as the corpus grew: with eleven documents indexed, "What
+  is the capital of France?" retrieved five emergency passages just over the
+  relevance threshold, and the model cited all five and answered "Paris". The
+  answer's words are now compared with the retrieved text, and an answer the
+  records do not contain is refused rather than shown. Measured: genuine answers
+  score 1.00, "Paris" scores 0.00
 - **AI is a layer, never a dependency.** A node with no model keeps capturing,
   replicating and serving; it reports intelligence as unavailable
 - The model never overwrites an operator's judgement — its severity is stored
@@ -270,10 +286,53 @@ Deleting the directory resets the node to a first launch.
   displays them **without needing location hardware of its own**
 - **Source and accuracy are shown, never assumed.** A desktop without GNSS gets a
   Wi-Fi or IP estimate; measured here as `Wireless` at ±165 m, and labelled as
-  such rather than as GPS. Only a satellite fix works with no network
+  such rather than as GPS
+- **Provenance is part of the record, not just the capture panel.** Accuracy,
+  source (`GNSS` / `WIRELESS` / `UNKNOWN`) and the time the position was
+  *measured* sit inside the signed payload, so a receiving node can tell a ±5 m
+  fix from a ±50 km one instead of seeing two identical-looking numbers
+- **Only `GNSS` is offline.** Windows Wireless positioning needs the operating
+  system to reach a lookup service; SecureMesh makes no such call, but that does
+  not make the position offline-derived, and it is not described as one
+- **Nothing is backfilled.** Incidents recorded before provenance existed read as
+  unknown, because that is what they are — no invented accuracy, and no capture
+  time borrowed from when the record happened to be filed
 - There is no official Tauri geolocation plugin for desktop — it marks Windows,
   Linux and macOS unsupported — so the platform API is called directly behind a
   `LocationProvider` trait that a USB/UART GNSS module can later replace
+
+**Offline tactical map**
+
+- **Nothing is requested.** No tile server, style server, glyph host, sprite
+  host or geocoder — there is no HTTP client anywhere on the map path, so no
+  request can be made regardless of configuration
+- **The renderer was chosen by the security policy, not by taste.** MapLibre GL
+  JS spawns workers from `blob:` URLs, which this application's
+  `default-src 'self'` CSP blocks. Rather than weaken the policy for a basemap,
+  the map is drawn with SecureMesh's own Web Mercator SVG renderer — **11 KB**,
+  no new dependency, and no change to the CSP or Tauri capabilities
+- **Real geography, provisioned locally.** The demonstration node ships a
+  3 302-feature OpenStreetMap extract — roads by class, water, railways and
+  named places over a 20 km box — read from `map/basemap.geojson` at startup.
+  Extraction is a separate operator-run script; the application has no HTTP
+  client on the map path and downloads nothing, ever.
+  **© OpenStreetMap contributors, ODbL 1.0** — attribution is written inside the
+  data file so it cannot be separated from it
+- **The region is derived, not chosen.** `npm run map:provision` reads the
+  node's own incidents from SQLite and computes the box they need plus a 10 km
+  margin. No demonstration coordinate appears anywhere in the application
+- **The grid fallback stays.** With no basemap the status row reads
+  *Not provisioned* — it never claims Ready without data — and the map still
+  draws a coordinate graticule, a scale bar and every real marker
+- **Accuracy is drawn honestly.** The uncertainty circle is sized in true metres
+  for the latitude and zoom, and an incident that recorded no accuracy gets **no
+  circle at all** rather than an invented radius
+- **Peers are not placed.** SecureMesh holds no authoritative peer position, so
+  none is drawn — putting a peer at an incident's coordinates would state where
+  it *was*, not where it is. The legend says so rather than leaving a gap
+- **A snapshot, not a track.** Position comes from the existing
+  `LocationProvider` when the operator asks; there is no `watchPosition` and no
+  movement history
 
 **Phase 2.6 — deterministic synchronisation**
 

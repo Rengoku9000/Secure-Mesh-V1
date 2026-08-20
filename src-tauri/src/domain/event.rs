@@ -53,6 +53,7 @@
 //! This is what makes multi-hop safe: B relaying A's event does not require C
 //! to trust B, only to check A's signature.
 
+use crate::domain::incident::LocationSource;
 use crate::error::{CoreError, CoreResult};
 use crate::identity::NodeIdentity;
 use chrono::{DateTime, Utc};
@@ -129,6 +130,20 @@ pub struct IncidentCreatedPayload {
     pub severity: String,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
+    /// Location provenance travels inside this payload, so it is covered by the
+    /// same signature as the coordinates it describes. A peer cannot alter how
+    /// trustworthy a position claims to be without breaking the event.
+    ///
+    /// All three default, so an event written before these fields existed still
+    /// deserialises. Its stored bytes are untouched and its signature still
+    /// verifies against them; it simply reads as provenance unknown, which is
+    /// what it is.
+    #[serde(default)]
+    pub accuracy_meters: Option<f64>,
+    #[serde(default)]
+    pub location_source: LocationSource,
+    #[serde(default)]
+    pub location_captured_at: Option<DateTime<Utc>>,
 }
 
 /// The body of an `INCIDENT_OBSERVATION` event.
@@ -388,6 +403,9 @@ mod tests {
             severity: "HIGH".to_string(),
             latitude: None,
             longitude: None,
+            accuracy_meters: None,
+            location_source: LocationSource::Unknown,
+            location_captured_at: None,
         }
     }
 
@@ -539,6 +557,9 @@ mod tests {
             severity: "LOW".to_string(),
             latitude: None,
             longitude: None,
+            accuracy_meters: None,
+            location_source: LocationSource::Unknown,
+            location_captured_at: None,
         };
 
         let result = MeshEvent::create(&identity(&dir), 1, EventKind::IncidentCreated, oversized);

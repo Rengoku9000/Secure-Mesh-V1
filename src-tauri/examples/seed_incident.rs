@@ -4,7 +4,16 @@
 //! application instances without driving the UI by hand.
 //!
 //! ```text
-//! cargo run --example seed_incident -- <data-dir> <description> [severity]
+//! cargo run --example seed_incident -- <data-dir> <description> [severity] [--locate]
+//! ```
+//!
+//! With `--locate` the incident carries a **real position taken from this
+//! machine**, through the same `LocationProvider` the application uses.
+//! Nothing is invented: if the provider cannot produce a fix, the incident is
+//! recorded without coordinates rather than with a guessed one.
+//!
+//! ```text
+//! (see usage above)
 //! ```
 //!
 //! This is an example target, so it is **not** part of the shipped application
@@ -12,7 +21,8 @@
 //! SecureMesh node expects to be the sole writer of its own event log, and two
 //! processes appending under one identity could race on sequence numbers.
 
-use securemesh_lib::domain::NewIncident;
+use securemesh_lib::domain::{LocationSource, NewIncident};
+use securemesh_lib::location::platform_provider;
 use securemesh_lib::NodeRuntime;
 
 fn main() {
@@ -22,7 +32,59 @@ fn main() {
         eprintln!("usage: seed_incident <data-dir> <description> [severity]");
         std::process::exit(2);
     };
-    let severity = args.next().unwrap_or_else(|| "MEDIUM".to_string());
+    let remaining: Vec<String> = args.collect();
+    let locate = remaining.iter().any(|argument| argument == "--locate");
+
+    // `--at <lat>,<lon>` records an operator-supplied position instead of
+    // reading the sensor. Useful for staging a demonstration with incidents at
+    // distinct places on one machine, where every live fix would be identical.
+    // Validation still happens in the core; nothing here bypasses it.
+    let explicit = remaining
+        .iter()
+        .find_map(|argument| argument.strip_prefix("--at="))
+        .and_then(|value| {
+            let (latitude, longitude) = value.split_once(',')?;
+            Some((
+                latitude.trim().parse::<f64>().ok()?,
+                longitude.trim().parse::<f64>().ok()?,
+            ))
+        });
+    let severity = remaining
+        .iter()
+        .find(|argument| !argument.starts_with("--"))
+        .cloned()
+        .unwrap_or_else(|| "MEDIUM".to_string());
+
+    // A real reading or none at all. The provider is asked once, exactly as
+    // the UI asks it, and a failure is reported rather than substituted.
+    let fix = if locate {
+        let provider = platform_provider();
+        provider.request_permission();
+        match provider.current_location() {
+            Ok(reading) => {
+                println!(
+                    "fix: {:.6}, {:.6}  accuracy {}  source {:?}",
+                    reading.latitude,
+                    reading.longitude,
+                    reading
+                        .accuracy_meters
+                        .map(|m| format!("{m:.1} m"))
+                        .unwrap_or_else(|| "unknown".to_string()),
+                    reading.source
+                );
+                Some(reading)
+            }
+            Err(error) => {
+                eprintln!(
+                    "no position available ({}); recording without coordinates",
+                    error.message()
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     // No transport: this writes to the log and exits. The running node picks
     // the event up from its own database and replicates it.
@@ -37,8 +99,18 @@ fn main() {
     match runtime.create_incident(NewIncident {
         description,
         severity,
-        latitude: None,
-        longitude: None,
+        latitude: explicit
+            .map(|(latitude, _)| latitude)
+            .or_else(|| fix.as_ref().map(|reading| reading.latitude)),
+        longitude: explicit
+            .map(|(_, longitude)| longitude)
+            .or_else(|| fix.as_ref().map(|reading| reading.longitude)),
+        accuracy_meters: fix.as_ref().and_then(|reading| reading.accuracy_meters),
+        location_source: fix
+            .as_ref()
+            .map(|reading| LocationSource::from(reading.source))
+            .or(explicit.map(|_| LocationSource::Unknown)),
+        location_captured_at: fix.as_ref().map(|reading| reading.captured_at),
     }) {
         Ok(incident) => println!(
             "created {} on node {} ({})",

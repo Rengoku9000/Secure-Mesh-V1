@@ -11,7 +11,7 @@
 
 use super::{format_timestamp, parse_timestamp, Database};
 use crate::domain::event::{EventKind, MeshEvent};
-use crate::domain::Incident;
+use crate::domain::{Incident, Location};
 use crate::error::{CoreError, CoreResult};
 use rusqlite::{params, OptionalExtension, Row};
 use uuid::Uuid;
@@ -167,6 +167,7 @@ impl Database {
         let conn = self.conn();
         let mut statement = conn.prepare(
             "SELECT id, created_by, description, severity, latitude, longitude,
+                    accuracy_meters, location_source, location_captured_at,
                     created_at, updated_at, sync_status
              FROM incidents
              WHERE origin_event_id IS NULL AND created_by = ?1
@@ -181,9 +182,12 @@ impl Database {
                 row.get::<_, String>(3)?,
                 row.get::<_, Option<f64>>(4)?,
                 row.get::<_, Option<f64>>(5)?,
-                row.get::<_, String>(6)?,
-                row.get::<_, String>(7)?,
-                row.get::<_, String>(8)?,
+                row.get::<_, Option<f64>>(6)?,
+                row.get::<_, Option<String>>(7)?,
+                row.get::<_, Option<String>>(8)?,
+                row.get::<_, String>(9)?,
+                row.get::<_, String>(10)?,
+                row.get::<_, String>(11)?,
             ))
         })?;
 
@@ -196,6 +200,9 @@ impl Database {
                 severity,
                 latitude,
                 longitude,
+                accuracy_meters,
+                location_source,
+                location_captured_at,
                 created,
                 updated,
                 sync,
@@ -209,6 +216,17 @@ impl Database {
                 })?,
                 latitude,
                 longitude,
+                accuracy_meters,
+                location_source: match location_source.as_deref() {
+                    None => crate::domain::LocationSource::Unknown,
+                    Some(label) => label.parse().map_err(|_| {
+                        CoreError::storage("database holds an unrecognised location source")
+                    })?,
+                },
+                location_captured_at: location_captured_at
+                    .as_deref()
+                    .map(|value| parse_timestamp("location_captured_at", value))
+                    .transpose()?,
                 created_at: parse_timestamp("created_at", &created)?,
                 updated_at: parse_timestamp("updated_at", &updated)?,
                 sync_status: sync.parse()?,
@@ -468,19 +486,47 @@ fn project_event(
     match event.kind {
         EventKind::IncidentCreated => {
             let payload = event.incident_created_payload()?;
+
+            // A valid signature proves who wrote the payload, not that what
+            // they wrote makes sense. The position is rebuilt through the same
+            // constructor the local command path uses, so a peer cannot store
+            // coordinates or an accuracy figure that would have been refused
+            // from an operator sitting at this machine.
+            let location = match (payload.latitude, payload.longitude) {
+                (None, None) => None,
+                (Some(latitude), Some(longitude)) => Some(Location::new(
+                    latitude,
+                    longitude,
+                    payload.accuracy_meters,
+                    payload.location_source,
+                    payload.location_captured_at,
+                )?),
+                _ => {
+                    return Err(CoreError::validation(
+                        "incident event carries only one coordinate",
+                    ))
+                }
+            };
+
             transaction.execute(
                 "INSERT INTO incidents (
                      id, created_by, description, severity, latitude, longitude,
+                     accuracy_meters, location_source, location_captured_at,
                      created_at, updated_at, sync_status, origin_event_id
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11, ?12)
                  ON CONFLICT (id) DO NOTHING",
                 params![
                     payload.incident_id,
                     event.origin_node,
                     payload.description,
                     payload.severity,
-                    payload.latitude,
-                    payload.longitude,
+                    location.map(|position| position.latitude),
+                    location.map(|position| position.longitude),
+                    location.and_then(|position| position.accuracy_meters),
+                    location.map(|position| position.source.as_str()),
+                    location
+                        .and_then(|position| position.captured_at)
+                        .map(format_timestamp),
                     format_timestamp(event.created_at),
                     // Authored here: nothing has acknowledged it yet. Arrived
                     // by replication: it is already shared by definition.
@@ -603,6 +649,9 @@ mod tests {
                 severity: "LOW".to_string(),
                 latitude: None,
                 longitude: None,
+                accuracy_meters: None,
+                location_source: crate::domain::LocationSource::Unknown,
+                location_captured_at: None,
             },
         )
         .unwrap()

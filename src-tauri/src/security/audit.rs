@@ -44,6 +44,11 @@ pub enum AuditEvent {
     PeerTrustChanged,
     /// An operation was refused because the caller lacked authorization.
     AuthorizationDenied,
+    /// Reference knowledge was provisioned into the local index.
+    ///
+    /// Audited because it changes what the node will answer questions from, and
+    /// "where did this text come from?" must be answerable after the fact.
+    KnowledgeInstalled,
 }
 
 impl AuditEvent {
@@ -55,6 +60,7 @@ impl AuditEvent {
             AuditEvent::IncidentCreated => "incident.created",
             AuditEvent::PeerTrustChanged => "peer.trust_changed",
             AuditEvent::AuthorizationDenied => "authorization.denied",
+            AuditEvent::KnowledgeInstalled => "knowledge.installed",
         }
     }
 }

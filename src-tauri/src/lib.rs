@@ -16,6 +16,7 @@ pub mod domain;
 pub mod error;
 pub mod identity;
 pub mod location;
+pub mod map;
 pub mod networking;
 pub mod runtime;
 pub mod security;
@@ -92,6 +93,10 @@ pub fn run() {
             commands::request_location_permission,
             commands::get_current_location,
             commands::get_knowledge_documents,
+            commands::get_map_basemap,
+            commands::get_map_geojson,
+            commands::get_knowledge_summary,
+            commands::install_operational_knowledge,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

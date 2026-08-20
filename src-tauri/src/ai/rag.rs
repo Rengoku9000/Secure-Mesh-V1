@@ -38,7 +38,7 @@ use crate::ai::embedding::EmbeddingEngine;
 use crate::ai::engine::{LocalInferenceEngine, StructuredRequest};
 use crate::ai::prompt::{self, INSUFFICIENT_CONTEXT_REPLY};
 use crate::error::CoreResult;
-use crate::storage::intelligence::{EmbeddingKind, RetrievedPassage};
+use crate::storage::intelligence::{EmbeddingKind, PassageSource, RetrievedPassage};
 use crate::storage::Database;
 use serde::Serialize;
 
@@ -56,6 +56,38 @@ pub const MIN_RELEVANCE: f32 = 0.35;
 /// Longest answer a model may produce for a question.
 const ANSWER_TOKENS: u32 = 400;
 
+/// Share of an answer's content words that must appear in the passages it
+/// cites, for the answer to count as supported.
+///
+/// # Why this exists
+///
+/// Retrieval scoring and the model's own `sufficient` flag both turned out to
+/// be insufficient once the corpus grew past a handful of incidents.
+///
+/// Measured on this machine with the operational knowledge pack installed:
+/// genuine questions retrieve passages scoring 0.70–0.85, while "What is the
+/// capital of France?" retrieves a flat band at 0.38–0.40 — above
+/// [`MIN_RELEVANCE`], because with eleven documents of emergency prose *some*
+/// passage is always slightly related to any English sentence. The model was
+/// then asked, set `sufficient` to true, cited five passages, and answered
+/// "Paris". Every gate had passed, and the answer came from pretraining.
+///
+/// So the answer is checked against the text it claims to rest on. This is the
+/// existing citation filter carried one level deeper: that one verifies a cited
+/// passage *exists*, this one verifies the answer has something to do with it.
+///
+/// The margin is wide. On the same run, answers to the six genuine questions
+/// scored above 0.8 — the model quotes its context closely — and "Paris" scored
+/// 0.00, since none of its words appear in any passage.
+pub const MIN_ANSWER_SUPPORT: f32 = 0.4;
+
+/// Shortest word that counts toward support.
+///
+/// Short words are function words that appear in every passage, so counting
+/// them would inflate the score of exactly the fabricated answers this is meant
+/// to catch.
+const SUPPORT_WORD_CHARS: usize = 4;
+
 /// A source an answer was built from.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,6 +96,11 @@ pub struct AnswerSource {
     /// renders it as `[1]`, so an operator sees the same label the model did.
     pub marker: String,
     pub kind: EmbeddingKind,
+    /// What this citation is: standing guidance, a live incident, or an
+    /// imported document. Shown next to the title, because an answer that draws
+    /// on both a procedure and a field report must not present them as one
+    /// undifferentiated body of knowledge.
+    pub source: PassageSource,
     /// Chunk ID or incident ID.
     pub subject_id: String,
     pub title: String,
@@ -99,6 +136,12 @@ pub struct GroundedAnswer {
     /// A non-zero count on an otherwise confident answer is a reason to distrust
     /// the rest of it.
     pub dropped_citations: usize,
+    /// Share of the answer's content words found in the passages it cites.
+    ///
+    /// Reported rather than merely acted on, so an operator can see how closely
+    /// an answer tracks its sources instead of taking `grounded` on trust.
+    /// `0.0` on a refusal.
+    pub answer_support: f32,
     pub model_id: String,
     pub retrieval_ms: u64,
     pub generation_ms: u64,
@@ -114,6 +157,7 @@ impl GroundedAnswer {
             grounded: false,
             refused: true,
             dropped_citations: 0,
+            answer_support: 0.0,
             model_id: model_id.to_string(),
             retrieval_ms,
             generation_ms: 0,
@@ -333,10 +377,30 @@ pub fn answer_question(
     cited.sort_unstable();
     cited.dedup();
 
+    // The last gate, and the one that catches what the others cannot. A model
+    // that cites real passages and then answers from its training has satisfied
+    // every check above: the passages exist, the numbers are valid, and it
+    // declared the context sufficient. Only comparing the answer with the text
+    // it rests on separates that from a genuine answer.
+    //
+    // Applied only when something real was cited. An answer citing nothing is
+    // already surfaced as uncited model interpretation, which is both accurate
+    // and the behaviour that was there before — turning it into a refusal would
+    // discard the fabricated-citation count an operator is shown.
+    let support = answer_support(&answer_text, &passages);
+    if !cited.is_empty() && support < MIN_ANSWER_SUPPORT {
+        let mut refusal = GroundedAnswer::refusal(question, &model_id, retrieval_ms);
+        refusal.generation_ms = generation_ms;
+        refusal.answer_support = support;
+        refusal.dropped_citations = dropped_citations;
+        return Ok(refusal);
+    }
+
     Ok(GroundedAnswer {
         question: question.to_string(),
         answer: answer_text,
         grounded: !cited.is_empty(),
+        answer_support: support,
         refused: false,
         dropped_citations,
         sources: build_sources(&passages, &cited),
@@ -358,6 +422,71 @@ struct RawAnswer {
     sufficient: bool,
 }
 
+/// Words from a text that are worth checking for support.
+///
+/// Lowercased, alphanumeric, and at least [`SUPPORT_WORD_CHARS`] long.
+/// Duplicates are kept: an answer that repeats a fabricated term should be
+/// penalised each time it does.
+fn content_words(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|word| word.chars().count() >= SUPPORT_WORD_CHARS)
+        .map(|word| word.to_ascii_lowercase())
+        .collect()
+}
+
+/// How much of an answer appears in the passages the model was shown.
+///
+/// # Which passages count
+///
+/// **Every retrieved passage, not only the cited ones.** The question this
+/// answers is "did this come out of the node's records, or out of the model?",
+/// and the records shown to the model are all of them. Measured against cited
+/// passages alone the check produced false refusals: Qwen writes an answer drawn
+/// from passages 2 and 3 and then lists only source 1, so a correct, fully
+/// grounded answer scored 0.08 against the single passage it happened to name.
+///
+/// Under-citation is a real defect, but a *different* one, and already
+/// surfaced — `grounded` and the per-source "retrieved, not cited" label exist
+/// for exactly it. Conflating the two here would refuse good answers to catch a
+/// problem that is already visible.
+///
+/// # Matching
+///
+/// Substring rather than whole words, which forgives the commonest morphology:
+/// an answer saying "vehicle" is supported by a passage saying "vehicles", and
+/// the singular is tried so the reverse holds too. That direction of error is
+/// the safe one — being generous about word forms risks accepting a true
+/// answer, being strict risks refusing one.
+///
+/// Returns `0.0` when there is nothing to check.
+fn answer_support(answer: &str, passages: &[RetrievedPassage]) -> f32 {
+    let words = content_words(answer);
+    if words.is_empty() {
+        return 0.0;
+    }
+
+    let mut evidence = String::new();
+    for passage in passages {
+        evidence.push_str(&passage.content.to_ascii_lowercase());
+        evidence.push(' ');
+    }
+    if evidence.trim().is_empty() {
+        return 0.0;
+    }
+
+    let supported = words
+        .iter()
+        .filter(|word| {
+            evidence.contains(word.as_str())
+                || word.strip_suffix('s').is_some_and(|singular| {
+                    singular.chars().count() >= SUPPORT_WORD_CHARS && evidence.contains(singular)
+                })
+        })
+        .count();
+
+    supported as f32 / words.len() as f32
+}
+
 /// Pairs retrieved passages with whether the model cited them.
 fn build_sources(passages: &[RetrievedPassage], cited: &[usize]) -> Vec<AnswerSource> {
     passages
@@ -368,6 +497,7 @@ fn build_sources(passages: &[RetrievedPassage], cited: &[usize]) -> Vec<AnswerSo
             AnswerSource {
                 marker: marker_number.to_string(),
                 kind: passage.kind,
+                source: passage.source,
                 subject_id: passage.subject_id.clone(),
                 title: passage.source_title.clone(),
                 score: passage.score,
@@ -534,6 +664,7 @@ mod tests {
     fn passage(id: &str, score: f32) -> RetrievedPassage {
         RetrievedPassage {
             kind: EmbeddingKind::KnowledgeChunk,
+            source: PassageSource::OperationalKnowledge,
             subject_id: id.to_string(),
             content: format!("content of {id}"),
             source_title: "Manual".to_string(),
@@ -557,6 +688,7 @@ mod tests {
     fn source_excerpts_are_bounded() {
         let long = RetrievedPassage {
             kind: EmbeddingKind::Incident,
+            source: PassageSource::OperationalKnowledge,
             subject_id: "i".to_string(),
             content: "x".repeat(5_000),
             source_title: "Incident".to_string(),
@@ -587,5 +719,75 @@ mod tests {
         // A threshold of 0 would admit anything and make retrieval meaningless.
         const { assert!(MIN_RELEVANCE > 0.0) };
         const { assert!(MIN_RELEVANCE < 1.0) };
+    }
+    // --- Answer support ---------------------------------------------------
+
+    fn evidence_passage(content: &str) -> RetrievedPassage {
+        RetrievedPassage {
+            kind: EmbeddingKind::KnowledgeChunk,
+            source: PassageSource::OperationalKnowledge,
+            subject_id: "chunk".to_string(),
+            content: content.to_string(),
+            source_title: "Heavy Rain Response".to_string(),
+            score: 0.4,
+        }
+    }
+
+    #[test]
+    fn an_answer_quoting_its_passage_is_fully_supported() {
+        let passages = [evidence_passage(
+            "Move personnel and vehicles off low ground and culvert approaches.",
+        )];
+        let support = answer_support("Move personnel and vehicles off low ground.", &passages);
+        assert!(support > 0.9, "support was {support}");
+    }
+
+    #[test]
+    fn an_answer_from_outside_the_passages_scores_zero() {
+        // The failure this gate exists for: real citations, plausible tone, and
+        // an answer that came from the model's training instead of the context.
+        let passages = [evidence_passage(
+            "Expect aftershocks and check for injuries, fire and fuel leaks.",
+        )];
+        assert_eq!(answer_support("Paris", &passages), 0.0);
+        assert_eq!(
+            answer_support("The capital of France is Paris.", &passages),
+            0.0
+        );
+    }
+
+    #[test]
+    fn support_forgives_a_plural_but_not_a_fabrication() {
+        let passages = [evidence_passage(
+            "Secure every vehicle before the wind arrives.",
+        )];
+        // "vehicles" is supported by "vehicle" in the passage.
+        assert!(answer_support("Secure vehicles.", &passages) > 0.9);
+        // A word that simply is not there is not.
+        assert!(answer_support("Secure helicopters.", &passages) < 0.6);
+    }
+
+    #[test]
+    fn a_passage_the_model_did_not_cite_still_counts_as_evidence() {
+        // The false-refusal case this design exists to avoid: the answer comes
+        // from passage two, the model names only passage one, and the answer is
+        // nonetheless entirely drawn from what the node supplied.
+        let passages = [
+            evidence_passage("Unrelated text about radio schedules."),
+            evidence_passage("Move laterally out of the path toward higher stable ground."),
+        ];
+        let support = answer_support("Move laterally toward higher stable ground.", &passages);
+        assert!(support > 0.9, "support was {support}");
+    }
+
+    #[test]
+    fn short_words_do_not_prop_up_an_unsupported_answer() {
+        // Function words appear in every passage. Counting them would let a
+        // fabricated answer inherit support from the shape of English.
+        let passages = [evidence_passage(
+            "The team should not go to the site if it is not safe to do so.",
+        )];
+        let support = answer_support("The capital is Paris.", &passages);
+        assert!(support < MIN_ANSWER_SUPPORT, "support was {support}");
     }
 }

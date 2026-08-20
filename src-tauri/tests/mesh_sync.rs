@@ -131,6 +131,9 @@ fn incident(description: &str, severity: &str) -> NewIncident {
         severity: severity.to_string(),
         latitude: None,
         longitude: None,
+        accuracy_meters: None,
+        location_source: None,
+        location_captured_at: None,
     }
 }
 
@@ -722,6 +725,9 @@ fn equivocation_by_a_peer_is_detected_and_nothing_is_overwritten() {
             severity: "CRITICAL".to_string(),
             latitude: None,
             longitude: None,
+            accuracy_meters: None,
+            location_source: securemesh_lib::domain::LocationSource::Unknown,
+            location_captured_at: None,
         },
     )
     .unwrap();

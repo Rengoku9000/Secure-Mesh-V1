@@ -1166,3 +1166,592 @@ body {
 .location-capture .button {
   justify-self: start;
 }
+
+/* --- Incident detail ---------------------------------------------------- */
+
+/* Rows open the full record, which is where location provenance lives. The
+   affordance has to be visible: a table that silently responds to clicks is
+   worse than one that does not respond at all. */
+.incident-table__row {
+  cursor: pointer;
+}
+
+.incident-table__row:hover {
+  background: var(--bg-inset);
+}
+
+.incident-table__row:focus-visible {
+  outline: 2px solid var(--border-strong);
+  outline-offset: -2px;
+}
+
+.detail-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5) 0;
+}
+
+.detail-list dt {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.detail-list dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  /* Node IDs and long descriptions must wrap rather than widen the dialog. */
+  overflow-wrap: anywhere;
+}
+
+/* --- Knowledge sources --------------------------------------------------- */
+
+/* Every citation is labelled with what kind of knowledge it is. Standing
+   guidance and a single unverified field report must not look alike in an
+   answer that draws on both. */
+.source__type {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.source__type--operational {
+  border-color: var(--state-ok);
+  color: var(--state-ok);
+}
+
+.source__type--incident {
+  border-color: var(--state-degraded);
+  color: var(--state-degraded);
+}
+
+.knowledge-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-4);
+}
+
+/* --- Tactical map -------------------------------------------------------- */
+
+/* The surface is height-capped rather than free-growing: the map must not push
+   the incident timeline below the fold on a small screen. */
+.map {
+  position: relative;
+  height: clamp(280px, 42vh, 460px);
+  overflow: hidden;
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--border-subtle);
+  touch-action: none;
+  user-select: none;
+}
+
+.map__surface {
+  display: block;
+  cursor: grab;
+}
+
+.map__surface:active {
+  cursor: grabbing;
+}
+
+/* Coordinate grid. Always present, so the map states where it is looking even
+   with no basemap behind it. */
+.map__graticule line {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+}
+
+/* Basemap features, drawn back to front. Every colour is an existing theme
+   token, so both themes stay in step and neither needs its own map style. */
+.map__feature {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-width: 1;
+}
+
+/* Water: visually distinct but never competing with a marker. */
+.map__feature--water {
+  fill: var(--accent-soft);
+  stroke: var(--accent-soft);
+  stroke-width: 1;
+}
+
+.map__feature--waterway {
+  stroke: var(--accent-soft);
+  stroke-width: 1.5;
+}
+
+/* Administrative edges: present, deliberately quiet. */
+.map__feature--boundary {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  stroke-dasharray: 6 4;
+  opacity: 0.7;
+}
+
+.map__feature--rail {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.65;
+}
+
+/* Road hierarchy: thickness carries the classification, so the network
+   reads as a network rather than as undifferentiated lines. */
+.map__feature--road-secondary {
+  stroke: var(--border-default);
+  stroke-width: 0.9;
+}
+
+.map__feature--road-primary {
+  stroke: var(--border-strong);
+  stroke-width: 1.6;
+}
+
+.map__feature--road-major {
+  stroke: var(--text-muted);
+  stroke-width: 2.4;
+}
+
+/* A closed way that encloses an area still fills, whatever its kind. */
+.map__feature--area {
+  fill-rule: evenodd;
+}
+
+/* Place names. Screen space, so they never scale with the map. */
+.map__labels {
+  pointer-events: none;
+}
+
+.map__label {
+  font-size: 10px;
+  fill: var(--text-secondary);
+  /* A halo in the surface colour, so a name stays readable where it
+     crosses a road. Cheaper and more reliable than placing labels to
+     avoid collisions. */
+  paint-order: stroke;
+  stroke: var(--bg-inset);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.map__label--city,
+.map__label--town {
+  font-size: 11px;
+  fill: var(--text-primary);
+  font-weight: 600;
+}
+
+/* The uncertainty ring. Deliberately unfilled and dashed: a solid disc reads as
+   "the incident covers this area", which is not what accuracy means. */
+.map__accuracy circle {
+  fill: none;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.75;
+}
+
+.map__accuracy circle.map__accuracy--node {
+  stroke: var(--state-ok);
+}
+
+.map__incident {
+  stroke: var(--bg-surface);
+  stroke-width: 2;
+  cursor: pointer;
+}
+
+.map__incident:hover {
+  stroke: var(--text-primary);
+}
+
+.map__incident--selected {
+  stroke: var(--focus-ring);
+  stroke-width: 3;
+}
+
+.map__incident:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.map__node circle {
+  fill: var(--state-ok);
+  stroke: var(--bg-surface);
+  stroke-width: 2;
+}
+
+.map__node .map__node-core {
+  fill: var(--bg-surface);
+  stroke: none;
+}
+
+.map__peer {
+  fill: var(--accent);
+  stroke: var(--bg-surface);
+  stroke-width: 2;
+}
+
+.map__zoom {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: grid;
+  gap: 2px;
+}
+
+.map__zoom button {
+  width: 30px;
+  height: 30px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.map__zoom button:hover {
+  background: var(--bg-hover);
+}
+
+.map__scale {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.map__scale-bar {
+  height: 6px;
+  border: 1px solid var(--text-secondary);
+  border-top: none;
+  background: transparent;
+}
+
+.map__scale-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.map__legend {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.map__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* The peer entry is dimmed because it is a legend for something that never
+   appears — SecureMesh holds no authoritative peer position. */
+.map__legend-item--muted {
+  opacity: 0.55;
+}
+
+.map__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.map__swatch--node {
+  background: var(--state-ok);
+}
+
+.map__swatch--peer {
+  background: var(--accent);
+}
+
+.map__swatch--incident {
+  background: var(--sev-high-fg);
+}
+
+.map__swatch--accuracy {
+  background: transparent;
+  border: 1px dashed var(--text-muted);
+}
+
+.map__notice {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.map-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.map__footnote {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.map__footnote {
+  padding: var(--space-3) var(--space-5);
+}
+
+.dashboard-map {
+  margin-bottom: var(--space-5);
+}
+
+/* --- Map: incident card, anchored at its marker -------------------------- */
+
+/* Positioned in screen space over the SVG, so it stays a readable size at every
+   zoom. Translated up and centred so it sits above the marker it describes
+   rather than covering it. */
+.map__popup {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 16px));
+  width: min(280px, calc(100% - 24px));
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+  z-index: 2;
+}
+
+.map__popup-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.map__popup-id {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.map__popup-close {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.map__popup-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.map__popup-text {
+  margin: 0 0 var(--space-3) 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.map__popup-facts {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3) 0;
+}
+
+.map__popup-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.map__popup-facts dt {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.map__popup-facts dd {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.map__popup-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.map__popup-action {
+  width: 100%;
+}
+
+/* --- Map: this node ------------------------------------------------------ */
+
+/* Sits opposite the legend so the two never collide, and carries the full
+   provenance of the reading — a coordinate is not useful without knowing how
+   good it is and where it came from. */
+.map__self {
+  position: absolute;
+  left: var(--space-3);
+  top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--state-ok);
+  border-radius: 6px;
+  max-width: 240px;
+}
+
+.map__self-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.map__self-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--state-ok);
+  flex: none;
+}
+
+.map__self-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.map__self-you {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--state-ok);
+  background: var(--state-ok-soft);
+}
+
+.map__self-facts {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+}
+
+.map__self-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.map__self-facts dt {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.map__self-facts dd {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* --- Map: severity emphasis ---------------------------------------------- */
+
+/* HIGH and CRITICAL carry a halo ring so they read first on a crowded map and
+   from across a room. Drawn as a second stroke rather than as animation: a
+   field dashboard should not blink at the person reading it. */
+.map__incident--urgent {
+  stroke-width: 3;
+}
+
+.map__urgent-ring {
+  fill: none;
+  stroke-width: 1.5;
+  opacity: 0.55;
+}
+
+/* The node marker's own label, beside the marker rather than in the corner, so
+   the identity is attached to the position it describes. */
+.map__node-label {
+  font-size: 10px;
+  font-weight: 600;
+  fill: var(--state-ok);
+  paint-order: stroke;
+  stroke: var(--bg-inset);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+/* Tells the operator what the camera is missing. Nothing is ever filtered out
+   of the map — this reports viewport position, and doubles as the way back. */
+.map__offscreen {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-3);
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.map__offscreen:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.map__offscreen-action {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}

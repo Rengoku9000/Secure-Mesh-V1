@@ -163,6 +163,25 @@ Every sample: **zero non-loopback endpoints, and zero UDP endpoints**. Both
 model servers bind `127.0.0.1` explicitly, and the only connection is the
 application's own hop to them.
 
+Re-measured after the operational knowledge pack was added, sampling every
+400 ms across a full run — install, embed 33 chunks, and answer six questions:
+
+```
+samples with AI processes alive : 40
+loopback / listening endpoints  : 119
+EXTERNAL endpoints observed     : 0
+```
+
+The knowledge pack itself cannot reach the network by construction: the eleven
+documents are compiled into the binary with `include_str!`, so installing them
+copies text that is already in memory. There is no download step to observe,
+and `tests/operational_knowledge.rs` asserts over the source that no HTTP
+client, socket or file-read appears on that path.
+
+**What this does not prove.** These samples were taken on a machine that *had*
+a working Internet connection; they show the process never used it. That is the
+honest claim. A test with the adapter physically disabled has not been run here.
+
 The claim is also structural, and checkable without watching sockets:
 
 ```powershell
@@ -250,12 +269,37 @@ Five is too few to be confident about the rate. It is enough to establish that
 refusal *happens* and that the mechanism is exercised, and not enough to quote
 80% as a property of the system.
 
-### Grounding is citation, not correctness
+### Grounding is containment, not correctness
 
-An answer marked grounded cites a passage that was genuinely retrieved. Nothing
-verifies that its claims follow from that passage, and a model can cite a real
-source while stating something the source does not support. See
-`SECURITY.md` §6.19.
+An answer marked grounded cites a passage that was genuinely retrieved, **and**
+its wording is drawn from the passages the model was shown. Nothing verifies
+that its claims *follow* from those passages: a model can quote a real source and
+still draw the wrong conclusion from it. See `SECURITY.md` §6.19.
+
+### The answer-support check, and why it was needed
+
+Measured on this machine after the operational knowledge pack was installed
+(11 documents, 33 chunks), with the real BGE and Qwen2.5-1.5B:
+
+| Question | Top retrieval score | Support | Verdict |
+|---|---|---|---|
+| What should I do in heavy rain? | 0.716 | 1.00 | answered |
+| What should I do during an avalanche? | 0.722 | 1.00 | answered |
+| What happened at Mount Abu? | 0.720 | 1.00 | answered |
+| Avalanche at Mount Abu — what should the team do? | 0.733 | 0.94 | answered |
+| Heavy rain road blockage — what should the team do? | 0.845 | 0.93 | answered |
+| **What is the capital of France?** | **0.395** | **0.00** | **refused** |
+
+The last row is the reason the check exists. Retrieval returned five
+emergency-procedure passages *above* the 0.35 relevance threshold — with eleven
+documents of English prose, something is always slightly related to any English
+sentence — and the model then declared the context sufficient, cited all five,
+and answered "Paris". Every gate that existed had passed.
+
+The margin between a genuine answer (0.93–1.00) and a fabricated one (0.00) is
+wide enough that the 0.40 threshold is not a fine judgement. It does, however,
+assume the generator quotes its context, which Qwen2.5-1.5B does; a heavily
+paraphrasing model could be refused despite being correctly grounded.
 
 `droppedCitations` reports source numbers the model named that were never
 supplied. They are discarded before display; a non-zero count is the fabrication

@@ -50,6 +50,52 @@ impl std::str::FromStr for EmbeddingKind {
     }
 }
 
+/// What kind of local knowledge a passage came from.
+///
+/// Distinct from [`EmbeddingKind`], which records which table a vector points
+/// into. This records what the passage *is* to an operator reading a citation:
+/// standing guidance, a live report, or a document someone loaded. A single
+/// answer routinely cites more than one, and conflating them would let field
+/// doctrine and an unverified field report appear identically sourced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PassageSource {
+    /// From the provisioned operational knowledge pack: stable field guidance.
+    OperationalKnowledge,
+    /// From an incident recorded on this node or replicated from a peer:
+    /// dynamic, unverified, and specific to one event.
+    LiveIncident,
+    /// From any other document an operator imported, including the synthetic
+    /// evaluation corpus. Deliberately not folded into operational knowledge —
+    /// this project does not get to promote arbitrary imports to doctrine.
+    ImportedDocument,
+}
+
+impl PassageSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PassageSource::OperationalKnowledge => "OPERATIONAL_KNOWLEDGE",
+            PassageSource::LiveIncident => "LIVE_INCIDENT",
+            PassageSource::ImportedDocument => "IMPORTED_DOCUMENT",
+        }
+    }
+
+    /// Classifies a retrieved row from its embedding kind and, for a chunk, the
+    /// `source_type` its document was imported under.
+    fn classify(kind: EmbeddingKind, document_source_type: Option<&str>) -> Self {
+        match kind {
+            EmbeddingKind::Incident => PassageSource::LiveIncident,
+            EmbeddingKind::KnowledgeChunk => {
+                if document_source_type == Some(crate::ai::knowledge_pack::SOURCE_TYPE) {
+                    PassageSource::OperationalKnowledge
+                } else {
+                    PassageSource::ImportedDocument
+                }
+            }
+        }
+    }
+}
+
 /// A locally provisioned reference document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -78,6 +124,8 @@ pub struct KnowledgeChunk {
 #[serde(rename_all = "camelCase")]
 pub struct RetrievedPassage {
     pub kind: EmbeddingKind,
+    /// What this passage is to a reader: guidance, a live report, or an import.
+    pub source: PassageSource,
     /// Chunk ID or incident ID.
     pub subject_id: String,
     pub content: String,
@@ -443,7 +491,8 @@ impl Database {
         let mut statement = conn.prepare(
             "SELECT e.kind, e.subject_id, e.vector,
                     COALESCE(c.content, i.description, ''),
-                    COALESCE(d.title, 'Incident ' || substr(i.id, 1, 8), '')
+                    COALESCE(d.title, 'Incident ' || substr(i.id, 1, 8), ''),
+                    d.source_type
              FROM embeddings e
              LEFT JOIN knowledge_chunks c
                     ON e.kind = 'KNOWLEDGE_CHUNK' AND c.id = e.subject_id
@@ -463,13 +512,14 @@ impl Database {
                     row.get::<_, Vec<u8>>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, String>(4)?,
+                    row.get::<_, Option<String>>(5)?,
                 ))
             },
         )?;
 
         let mut scored: Vec<RetrievedPassage> = Vec::new();
         for row in rows {
-            let (kind, subject_id, bytes, content, title) = row?;
+            let (kind, subject_id, bytes, content, title, document_source_type) = row?;
 
             // A corrupt stored vector skips that candidate rather than failing
             // the whole search.
@@ -487,8 +537,10 @@ impl Database {
                 continue;
             }
 
+            let kind = kind.parse::<EmbeddingKind>()?;
             scored.push(RetrievedPassage {
-                kind: kind.parse::<EmbeddingKind>()?,
+                kind,
+                source: PassageSource::classify(kind, document_source_type.as_deref()),
                 subject_id,
                 content,
                 source_title: title,
@@ -506,6 +558,22 @@ impl Database {
     pub fn count_embeddings(&self) -> CoreResult<u64> {
         let conn = self.conn();
         let count: i64 = conn.query_row("SELECT count(*) FROM embeddings", [], |r| r.get(0))?;
+        Ok(count.max(0) as u64)
+    }
+
+    /// Vectors of one kind.
+    ///
+    /// "How many incidents are searchable" is derived from the vectors that
+    /// exist, not from a status column, for the same reason
+    /// `incidents_awaiting_embedding` is: a count that can disagree with what
+    /// retrieval can find is worse than no count.
+    pub fn count_embeddings_of_kind(&self, kind: EmbeddingKind) -> CoreResult<u64> {
+        let conn = self.conn();
+        let count: i64 = conn.query_row(
+            "SELECT count(*) FROM embeddings WHERE kind = ?1",
+            params![kind.as_str()],
+            |row| row.get(0),
+        )?;
         Ok(count.max(0) as u64)
     }
 
@@ -556,6 +624,9 @@ mod tests {
             severity: "HIGH".to_string(),
             latitude: None,
             longitude: None,
+            accuracy_meters: None,
+            location_source: None,
+            location_captured_at: None,
         }
         .validate(&f.node_id)
         .unwrap();

@@ -30,6 +30,9 @@ import type {
   SystemStatus,
   TrustEvent,
   TrustState,
+  InstallReport,
+  KnowledgeBaseSummary,
+  Basemap,
 } from "../types/core";
 
 /**
@@ -248,6 +251,40 @@ export function getCurrentLocation(): Promise<DeviceLocation> {
 /** Documents in the local knowledge base. */
 export function getKnowledgeDocuments(): Promise<KnowledgeDocument[]> {
   return call<KnowledgeDocument[]>("get_knowledge_documents");
+}
+
+/**
+ * The provisioned basemap description, or `null` when none is installed.
+ *
+ * Cheap: reports what is installed without returning its geometry.
+ */
+export function getMapBasemap(): Promise<Basemap | null> {
+  return call<Basemap | null>("get_map_basemap");
+}
+
+/**
+ * The basemap geometry.
+ *
+ * Read once when the map mounts, never on the refresh cycle. Reads a local
+ * file; there is no tile server and no request leaves the machine.
+ */
+export function getMapGeojson(): Promise<string> {
+  return call<string>("get_map_geojson");
+}
+
+/** Counts of local knowledge. Read-only; valid on a node with no model. */
+export function getKnowledgeSummary(): Promise<KnowledgeBaseSummary> {
+  return call<KnowledgeBaseSummary>("get_knowledge_summary");
+}
+
+/**
+ * Installs the operational knowledge pack compiled into the binary.
+ *
+ * Nothing is downloaded and no file is read — the documents ship inside the
+ * executable. Idempotent: a second call reports everything already present.
+ */
+export function installOperationalKnowledge(): Promise<InstallReport> {
+  return call<InstallReport>("install_operational_knowledge");
 }
 
 /** The local trust audit log, newest first. */

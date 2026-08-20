@@ -123,14 +123,28 @@ impl LocalInferenceEngine for StubGenerator {
 
     fn generate_structured(
         &self,
-        _request: &StructuredRequest,
+        request: &StructuredRequest,
     ) -> securemesh_lib::CoreResult<String> {
         self.invocations.fetch_add(1, Ordering::SeqCst);
-        // A grounded answer citing the first supplied passage.
-        Ok(
-            r#"{"answer":"Answered from local records.","sources":[1],"sufficient":true}"#
-                .to_string(),
-        )
+
+        // A grounded answer quotes the context it was given, which is what the
+        // real model does and what the answer-support check requires. A stub
+        // returning fixed prose unrelated to the passages would be modelling an
+        // *ungrounded* answer while claiming to be a grounded one — and would
+        // be refused, correctly.
+        let quoted: String = request
+            .user
+            .lines()
+            .find(|line| line.contains("avalanche"))
+            .unwrap_or("no context supplied")
+            .chars()
+            .take(120)
+            .collect();
+
+        Ok(format!(
+            r#"{{"answer":{},"sources":[1],"sufficient":true}}"#,
+            serde_json::to_string(&quoted).unwrap()
+        ))
     }
 
     fn unload(&self) {}
@@ -219,6 +233,9 @@ fn incident(description: &str) -> NewIncident {
         severity: "HIGH".to_string(),
         latitude: None,
         longitude: None,
+        accuracy_meters: None,
+        location_source: None,
+        location_captured_at: None,
     }
 }
 

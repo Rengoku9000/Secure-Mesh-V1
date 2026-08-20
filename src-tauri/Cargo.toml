@@ -49,6 +49,9 @@ windows = { version = "0.62", features = [
 windows-future = "0.3"
 
 [dev-dependencies]
+# Lets a test open the database file directly, which is the only way to write a
+# row in its pre-migration shape and prove the reader handles it.
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 tempfile = "3.27.0"
 uuid = { version = "1.24.0", features = ["v4"] }
 

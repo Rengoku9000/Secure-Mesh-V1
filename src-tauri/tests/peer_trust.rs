@@ -102,6 +102,9 @@ fn incident(description: &str) -> NewIncident {
         severity: "HIGH".to_string(),
         latitude: None,
         longitude: None,
+        accuracy_meters: None,
+        location_source: None,
+        location_captured_at: None,
     }
 }
 

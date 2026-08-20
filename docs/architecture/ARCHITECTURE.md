@@ -447,7 +447,9 @@ thousands; the interface is the same shape an approximate index would need, so
 replacing it later does not disturb callers.
 
 One table serves both knowledge chunks and incidents, because a question must be
-able to rank a procedure and a field report against each other.
+able to rank a procedure and a field report against each other. Nothing selects a
+category first: ranking is by score alone across the single table, which is why
+one answer can cite an operational procedure and a live incident together.
 
 ### 6.6 Grounding is enforced, not requested
 
@@ -470,8 +472,16 @@ returned directly. `sufficient: false`, an empty answer, or output that will not
 parse all become the same canonical refusal. An answer citing nothing is
 reported as *model interpretation*, not as fact.
 
-This verifies citation, not meaning — a model can cite a real passage and still
-say something it does not support (`SECURITY.md` §6.19).
+Citation alone stopped being enough once the corpus grew past a handful of
+incidents. With eleven operational documents indexed, "What is the capital of
+France?" retrieved five passages at 0.38–0.40 — over the 0.35 threshold — and
+Qwen declared the context sufficient, cited all five, and answered "Paris". So a
+fourth check compares the answer's content words against the passages it cites,
+and refuses below `MIN_ANSWER_SUPPORT`. Measured on that run: genuine answers
+above 0.8, "Paris" at 0.00.
+
+This verifies containment, not meaning — a model can still quote a real passage
+and draw the wrong conclusion from it (`SECURITY.md` §6.19).
 
 ### 6.7 AI is a layer, never a dependency
 
@@ -507,6 +517,262 @@ right answer differs between a Jetson-class GPU device and a CPU-only SBC.
 
 ---
 
+## 6d. Operational knowledge (IMPLEMENTED)
+
+```text
+              LOCAL KNOWLEDGE
+                     │
+        ┌────────────┴────────────┐
+        │                         │
+  Operational docs          Live incidents
+  (provisioned pack)     (created / replicated)
+        │                         │
+        └────────────┬────────────┘
+                     ▼
+              BGE-small-en-v1.5
+                     ▼
+              one vector table
+                     ▼
+            retrieval (cosine, 0.35)
+                     ▼
+                   Qwen
+                     ▼
+             grounded answer
+```
+
+### 6d.1 The problem
+
+The index held only incidents, so a node that had just been provisioned could
+answer nothing. "What should I do in heavy rain?" returned the refusal —
+correctly, since nothing local supported an answer, and uselessly. An assistant
+that can only recite what has already been reported is a search box.
+
+The fix is **a larger corpus, not a looser pipeline.** BGE, the 0.35 threshold,
+top-k, the constrained schema and the refusal are all unchanged.
+
+### 6d.2 Two kinds of knowledge, one index
+
+| | Operational knowledge | Live incident |
+|---|---|---|
+| What it is | Stable field guidance | One dynamic, unverified report |
+| Where it comes from | Provisioned pack, compiled into the binary | Created locally or replicated from a peer |
+| Authoritative? | Reference material | **Yes** — it is the operational record |
+| Replicated? | No | Yes, as a signed event |
+
+They stay separate as data. Incidents remain the authoritative, replicated,
+signed record; operational documents are reference material that is never
+replicated and can be deleted and reinstalled without touching anything
+operational.
+
+They share one vector table, because a question has to be able to rank a
+procedure against a field report. `PassageSource` records which a passage is, and
+every citation carries it through to the UI — an answer drawing on both must let
+a reader see which half came from where.
+
+`IP`-style provenance collapsing does not happen here: an operator's own import
+is `IMPORTED_DOCUMENT`, never promoted to `OPERATIONAL_KNOWLEDGE`. This project
+does not get to turn arbitrary text into doctrine by ingesting it.
+
+### 6d.3 Provisioning
+
+The eleven documents are compiled in with `include_str!`. There is no download,
+no runtime filesystem lookup and no path to populate — the pack is present
+exactly when the binary is, which is the only honest way to promise it works
+offline.
+
+Installation is **explicit**. Nothing is provisioned at startup, so "where did
+this text come from?" is always answerable: an operator installed it, from the
+binary. It is audited as `knowledge.installed`.
+
+Installation is **idempotent**. Each document is keyed by a SHA-256 of its
+normalised text, so a second install adds no documents, no chunks and no
+vectors. Re-running it is how an operator confirms the pack is present, which
+means it has to be safe to run.
+
+Embedding is *not* part of installation. New chunks are handed to the same
+background indexer incidents use, so a slow or failing model cannot leave an
+install half-applied.
+
+### 6d.4 What the documents are
+
+**Demonstration content written for this project.** Not sourced from NDMA, NDRF,
+FEMA, the IFRC or any other authority, and not agency doctrine. Every document
+carries that label *in its own text*, so a passage quoted back to an operator
+after chunking still says what it is — a label living only in a database column
+would be stripped by the very pipeline that quotes it. A test asserts the label
+is present and that no document names an authority it does not have.
+
+On a real device this is the slot a genuine licensed procedure set drops into at
+provisioning time. The mechanism is the deliverable; the content is a stand-in
+that makes the mechanism demonstrable.
+
+### 6d.5 Measured
+
+On this machine, with the pack installed and two incidents recorded:
+
+| | |
+|---|---|
+| Documents | 11 |
+| Chunks | 33 |
+| Vectors | 33 + one per incident |
+| Install | 13 ms |
+| Embed 33 chunks | 2 320 ms |
+| Retrieval | 4–11 ms |
+| Generation | 4.1–8.7 s |
+
+Retrieval scores separate cleanly: genuine questions return passages at
+**0.70–0.85**, while a question local knowledge cannot support returns a flat
+band at **0.38–0.40**. That band is above the 0.35 threshold, which is why the
+answer-support check in §6.6 exists.
+
+---
+
+## 6e. Offline tactical map (IMPLEMENTED)
+
+```text
+   LocationProvider ──┐
+   incidents (SQLite) ─┼──▶ IPC ──▶ React map ──▶ SVG renderer
+   peers (mesh)  ─────┘                              │
+                                                     ▼
+                                          map/basemap.geojson
+                                            (local file, optional)
+```
+
+**The map is a visualization layer and never a source of truth.** It reads
+existing state through existing commands and writes nothing. A test asserts the
+map module names no database type at all, so there is no path from it to a
+write.
+
+### 6e.1 Why a hand-written SVG renderer
+
+The obvious choice was MapLibre GL JS. The application's Content-Security-Policy
+ruled it out:
+
+```
+default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+img-src 'self' data:; font-src 'self'; object-src 'none'; ...
+```
+
+There is no `worker-src` directive, so it falls back to `default-src 'self'`.
+MapLibre creates its worker threads from `blob:` URLs, which that blocks
+outright. Running it would have required adding `worker-src blob:`,
+`connect-src` for tile reads and `img-src blob:` — weakening a real security
+boundary to gain a basemap. Three further facts pointed the same way: it is
+roughly 900 KB against a 230 KB bundle, it needs a style, glyphs, sprites and
+tile data that must all be packaged, and this project may not download any of
+them.
+
+The renderer is therefore SecureMesh's own: Web Mercator projection, pointer
+pan and zoom, SVG markers. It cost **11 KB** and required no CSP change, no
+capability change and no new dependency. `capabilities/default.json` remains
+`core:default`.
+
+The offline guarantee is consequently *structural*. There is no HTTP client, no
+tile URL, no style URL, no glyph or sprite host and no geocoder anywhere on the
+map path — not disabled, absent. Tests scan both the Rust module and the
+frontend layer for every online provider and every transport primitive.
+
+### 6e.2 What is drawn, and what is refused
+
+| | |
+|---|---|
+| Incident with coordinates | Marker, coloured by the **existing** severity tokens |
+| Incident without coordinates | **No marker.** It belongs in the table, not at a guessed point |
+| Recorded accuracy | Dashed circle at the true ground radius |
+| No recorded accuracy | **No circle.** A default radius would invent precision |
+| This node | Green marker, **only after** the operator asks for a position |
+| Peer node | **Nothing** — see below |
+
+The accuracy circle is sized through `metresPerPixel(latitude, zoom)`, which is
+latitude-dependent because Mercator stretches away from the equator. A circle
+scaled by a fixed pixel factor would misstate a fix by a factor of two at
+temperate latitudes. It is drawn unfilled and dashed on purpose: a solid disc
+reads as "the incident covers this area", which is not what accuracy means.
+
+### 6e.3 Peers are absent, deliberately
+
+`domain::peer::Peer` carries identity, trust, reachability and replication
+state. It has no coordinates, and nothing in the schema stores a peer position —
+so SecureMesh does not know where any peer is.
+
+The tempting shortcut is to place a peer at the coordinates of an incident it
+authored. That is wrong: it is where the peer was when it filed a report, which
+may be hours old and kilometres away, and drawing it as the peer's position
+would state something the system does not know. The incident is shown there
+because the incident is what happened there.
+
+The marker layer and its type exist and are exercised by a test that asserts the
+result is empty. The day a peer position becomes authoritative, only the source
+of that array changes. The legend shows the peer entry dimmed and labelled
+"no position held", so the absence is visible rather than looking like a bug.
+
+### 6e.4 Basemap provisioning
+
+Nothing is ever downloaded **by the application**. Obtaining map data is a
+separate, deliberate act: `scripts/extract-osm-basemap.mjs` queries
+OpenStreetMap once, by hand, and writes `map/basemap.geojson`. The shipped
+binary has no HTTP client on the map path and could not fetch anything if it
+tried.
+
+The demonstration node carries a real 3 302-feature extract of northern
+Bengaluru — 2 175 classified roads, 869 water bodies, 167 railway ways and 88
+named places over a 20 km box, 1.25 MB, © OpenStreetMap contributors under ODbL.
+The full dataset record, including checksum and coverage, is in
+`docs/map/PROVISIONING.md`.
+
+**The region is derived from real records.** `npm run map:provision --
+<data-dir>` reads the node's own incidents, takes their bounding box and adds a
+10 km margin, then checks the installed basemap actually contains it. No
+demonstration coordinate is written into the application; the region follows
+wherever the deployment is. A basemap for the wrong region would otherwise
+render happily and look correct.
+
+Until an operator installs a basemap the map draws a graticule, a scale bar and
+every real marker, and the status row reads **Not provisioned** — never "Ready".
+
+Features are drawn by a `kind` the extraction assigns, so OSM tag vocabulary
+stays in provisioning and the renderer stays readable: water and boundaries
+beneath, then rail, then roads by class, with markers above all of it. Place
+names are capped at fourteen and ranked by significance — a 20 km box holds
+hundreds of named hamlets, and drawing them all is less legible than drawing
+none. Names come from the data or not at all.
+
+The layout deliberately mirrors the AI models, so "an asset an operator
+installs" has one shape in this project. `npm run map:provision` validates
+through `map::load`, the same function the running node uses, so the check and
+the application cannot disagree. It reports the file, size, feature count,
+SHA-256 and geographic coverage, and **fails loudly rather than fetching**
+anything.
+
+A file that is not JSON, is not a `FeatureCollection`, or holds no drawable
+coordinates is refused with a stated reason. An empty map and a provisioning
+mistake look identical on screen, and only one of them is acceptable.
+
+### 6e.5 Performance
+
+The dashboard re-reads every two seconds and returns a fresh array each time, so
+array identity says nothing about whether the map changed. Markers are memoized
+on a **content signature** covering only what is drawn — id, position, severity,
+accuracy, sync status — so a poll that changed nothing costs nothing, and
+editing an incident's description does not redraw the map.
+
+The basemap is projected into normalized world coordinates **once**. Panning and
+zooming then move a single SVG transform rather than reprojecting every path,
+which is what keeps a large basemap responsive.
+
+### 6e.6 Boundaries
+
+- **No continuous tracking.** No `watchPosition`, no movement history. Position
+  is a snapshot taken when the operator presses "My location", through the
+  existing `LocationProvider` — React never touches a platform location API.
+- **No geocoding**, forward or reverse. Coordinates are shown as numbers.
+- **No routing and no imagery.**
+- **One selection.** A marker click sets the dashboard's existing `selected`
+  incident, which is the same state the incident table uses. There is no second
+  selection and no duplicate details system.
+
+---
+
 ## 6c. Device location (IMPLEMENTED)
 
 ```text
@@ -519,7 +785,7 @@ right answer differs between a Jetson-class GPU device and a CPU-only SBC.
         └── NmeaSerialProvider        USB/UART GNSS — Phase 6, not built
         │
         ▼
-   latitude / longitude / accuracy / source   shown for review
+   latitude / longitude / accuracy / source / captured   shown for review
         │  operator confirms
         ▼
    NewIncident.validate ──▶ signed event ──▶ QUIC ──▶ peers
@@ -529,7 +795,61 @@ right answer differs between a Jetson-class GPU device and a CPU-only SBC.
 new subsystem: `incidents` and `IncidentCreatedPayload` already carried
 `latitude`/`longitude` as paired, range-validated options, so coordinates
 already replicated. What was missing was a way to *obtain* them from the device.
-No schema change, no migration, no new wire format.
+
+### 6c.1 Provenance travels with the coordinates
+
+A coordinate on its own is not actionable. `13.133599, 77.565330` is the same
+two numbers whether it came off a satellite and is good to five metres or came
+from an IP lookup and is good to fifty kilometres. Until migration 005 the
+receiving node could not tell: accuracy and source existed only in the capture
+panel of the machine that took the reading, and were discarded on submit.
+
+Three fields now sit on the incident and inside `IncidentCreatedPayload`:
+
+| Field                  | Meaning                                              |
+| ---------------------- | ---------------------------------------------------- |
+| `accuracyMeters`       | Reported radius. `null` = no figure, never `0`.      |
+| `locationSource`       | `GNSS` / `WIRELESS` / `UNKNOWN`                      |
+| `locationCapturedAt`   | When the position was **measured**                   |
+
+They are in the payload, not beside it, so the existing event signature covers
+them: a peer cannot alter how trustworthy a position claims to be without
+breaking the event. There is **no second location event, no separate location
+message, and no new endpoint.**
+
+`locationCapturedAt` is deliberately separate from `createdAt`. A stale fix
+attached to a fresh incident is a real failure mode, and two timestamps are what
+let a reader notice it.
+
+**The record's vocabulary is coarser than the platform's.** The device layer
+distinguishes `SATELLITE` / `WIRELESS` / `IP_ADDRESS` / `UNKNOWN`; the record
+keeps only the distinction that changes a decision. `IP_ADDRESS` collapses to
+`UNKNOWN` rather than to `WIRELESS` — an IP lookup resolves to a city, and
+bucketing it with a Wi-Fi fix two orders of magnitude better would be the
+overclaim this design exists to prevent. The accuracy radius travels with it, so
+such a reading is stored as unattested provenance carrying a figure in the tens
+of kilometres. The mapping lives in one place in Rust (`From` for the typed
+path, serde aliases for the JSON path) and a test asserts the two agree on every
+variant.
+
+### 6c.2 Migration 005 fabricates nothing
+
+Existing incidents get `accuracy_meters = NULL`, `location_source = NULL`
+(reading as `UNKNOWN`), and `location_captured_at = NULL`. `created_at` is
+**not** copied into `location_captured_at`: filing time is not measurement time,
+and inventing one would put a fabricated figure inside a signed record. An old
+incident reading "accuracy unknown" is reporting the truth — nobody recorded it.
+
+Events written before these fields existed still verify: their stored bytes are
+untouched, and the new fields default on deserialisation.
+
+### 6c.3 The same gate applies to peers
+
+A valid signature proves *who* wrote a payload, not that the payload is sane.
+The apply path rebuilds every incoming position through `Location::new` — the
+same constructor the local command path uses — so a remote node cannot store a
+negative, non-finite or absurd accuracy that a local operator would have been
+refused. Provenance with no coordinates to describe is rejected outright.
 
 ### Why the platform API rather than the Tauri plugin
 
@@ -548,10 +868,15 @@ requires the OS to reach Microsoft. Reporting that as "GPS" would mislead
 someone deciding whether to walk to a coordinate.
 
 So a fix carries its `LocationSource` and accuracy exactly as the platform gave
-them, and the UI shows both. Measured on the development machine: a real fix in
-2212 ms, **source `Wireless`, accuracy ±165 m** — correctly *not* labelled
-satellite, and correctly reported as not offline-capable. Only a satellite fix
-works with no network.
+them, the UI shows both, and both are now kept on the record. Measured on the
+development machine: a real fix in 2212 ms, **source `Wireless`, accuracy
+±165 m** — correctly *not* labelled satellite, and correctly reported as not
+offline-capable.
+
+**Windows Wireless positioning is not an offline capability.** It requires the
+operating system to reach a lookup service. Only `GNSS` returns `true` from
+`works_offline()`, and that rule is stated once, in the core, so the UI cannot
+get it subtly wrong somewhere else.
 
 **Nothing is ever invented.** A provider that cannot answer returns an error;
 there is no default coordinate, no last-known fallback, and no placeholder.
@@ -561,11 +886,18 @@ there is no default coordinate, no last-known fallback, and no placeholder.
 - **Snapshot, not tracking.** `getCurrentPosition` only. No `watchPosition`,
   no background polling, no movement history. The incident keeps the position it
   was reported at.
-- **A vector for location is never transmitted separately.** Coordinates travel
-  inside the signed incident event, over the authorized path, so a receiving node
-  needs no location hardware to display where something happened.
-- **Reads are not audited.** Reading a sensor is an observation, not a state
-  change; `incident.created` already records the coordinates that were kept.
+- **A vector for location is never transmitted separately.** Coordinates and
+  their provenance travel inside the signed incident event, over the authorized
+  path, so a receiving node needs no location hardware to display where
+  something happened.
+- **Provenance describes a measurement or it is not sent.** The coordinate
+  fields stay editable after a capture; if the operator changes them, the UI
+  drops the accuracy and source rather than attaching a satellite-grade claim to
+  hand-typed numbers, and says so.
+- **Reads are not audited, and coordinates are never written to the audit log.**
+  Reading a sensor is an observation, not a state change. Recording a position on
+  every incident would build a track of where the operator has been, which is a
+  worse disclosure than anything it would prove.
 - **No geocoding and no map.** Coordinates are displayed as numbers. An offline
   map is a separate future phase.
 - **GPS is never a precondition.** No receiver, refused permission or a timed-out

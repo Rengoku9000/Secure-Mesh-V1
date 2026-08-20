@@ -59,3 +59,10 @@ ai/models/*
 # Local inference runtime: third-party prebuilt binaries, provisioned by the
 # operator and verified against ai/models/README.md. Never vendored here.
 ai/runtime/
+
+# Operator-provisioned offline map data.
+#
+# Not committed: it is chosen per deployment, can be tens of megabytes, and
+# carries licensing obligations that depend on its source (OSM extracts are
+# ODbL). The slot and its documentation are tracked; the data is not.
+map/*.geojson

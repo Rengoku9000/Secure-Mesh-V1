@@ -51,6 +51,17 @@ export type LocationPermission =
  */
 export type LocationSource = "SATELLITE" | "WIRELESS" | "IP_ADDRESS" | "UNKNOWN";
 
+/**
+ * How an incident record describes where its coordinates came from. Mirrors
+ * `domain::incident::LocationSource`.
+ *
+ * Deliberately coarser than {@link LocationSource}: the record keeps the one
+ * distinction a reader can act on — off a satellite, or not. The translation
+ * from the platform vocabulary is done in Rust, and the UI never performs it,
+ * so there is no second copy of the rule to drift.
+ */
+export type IncidentLocationSource = "GNSS" | "WIRELESS" | "UNKNOWN";
+
 /** One position fix, exactly as the platform reported it. */
 export interface DeviceLocation {
   latitude: number;
@@ -101,7 +112,36 @@ export interface SystemStatus {
   network: ComponentStatus;
   ai: ComponentStatus;
   location: ComponentStatus;
+  /**
+   * Whether offline geographic data is installed. Deliberately unrelated to
+   * network reachability — the map never uses the network either way.
+   */
+  map: ComponentStatus;
   tee: ComponentStatus;
+}
+
+/** Geographic extent of a basemap. Mirrors `map::BoundingBox`. */
+export interface BoundingBox {
+  minLatitude: number;
+  minLongitude: number;
+  maxLatitude: number;
+  maxLongitude: number;
+}
+
+/**
+ * A provisioned offline basemap, described without its geometry.
+ *
+ * Mirrors `map::Basemap`. Separate from the GeoJSON itself so the dashboard can
+ * poll status without dragging megabytes of coastline across IPC.
+ */
+export interface Basemap {
+  name: string;
+  path: string;
+  bytes: number;
+  featureCount: number;
+  bounds: BoundingBox;
+  /** SHA-256 of the file, so an operator can confirm what is installed. */
+  sha256: string;
 }
 
 /** Mirrors `runtime::NetworkStatus`. */
@@ -122,6 +162,18 @@ export interface Incident {
   severity: Severity;
   latitude: number | null;
   longitude: number | null;
+  /**
+   * Reported accuracy radius in metres. `null` means the reading carried no
+   * figure — never that it was exact.
+   */
+  accuracyMeters: number | null;
+  /** Provenance of the coordinates. `UNKNOWN` for hand-entered positions. */
+  locationSource: IncidentLocationSource;
+  /**
+   * When the position was measured, as distinct from `createdAt`, which is when
+   * the incident was filed.
+   */
+  locationCapturedAt: string | null;
   createdAt: string;
   updatedAt: string;
   syncStatus: SyncStatus;
@@ -133,6 +185,16 @@ export interface NewIncident {
   severity: Severity;
   latitude: number | null;
   longitude: number | null;
+  /**
+   * Supplied only alongside coordinates. The core refuses provenance with no
+   * position to describe, because it would imply a measurement never taken.
+   *
+   * The source is sent as the platform reported it; Rust maps it onto the
+   * record's vocabulary.
+   */
+  accuracyMeters: number | null;
+  locationSource: LocationSource | null;
+  locationCapturedAt: string | null;
 }
 
 /** Reachability of a peer. Mirrors `domain::peer::ConnectionState`. */
@@ -302,10 +364,26 @@ export interface IntelligenceStatus {
   vectorsStored: number;
 }
 
+/**
+ * What a retrieved passage is to a reader. Mirrors
+ * `storage::intelligence::PassageSource`.
+ *
+ * Distinct from the embedding kind, which only records which table a vector
+ * points into. This is the distinction an operator acts on: standing guidance
+ * carries different weight from an unverified field report, and an answer that
+ * draws on both must not present them identically.
+ */
+export type PassageSource =
+  | "OPERATIONAL_KNOWLEDGE"
+  | "LIVE_INCIDENT"
+  | "IMPORTED_DOCUMENT";
+
 /** A passage an answer was built from. Mirrors `ai::rag::AnswerSource`. */
 export interface AnswerSource {
   marker: string;
   kind: "KNOWLEDGE_CHUNK" | "INCIDENT";
+  /** Whether this citation is guidance, a live incident, or an import. */
+  source: PassageSource;
   subjectId: string;
   title: string;
   score: number;
@@ -328,9 +406,41 @@ export interface GroundedAnswer {
    * before reaching here; a non-zero count is a reason to distrust the answer.
    */
   droppedCitations: number;
+  /**
+   * Share of the answer's content words found in the passages it cites.
+   *
+   * An answer that cites real passages and then draws on the model's training
+   * scores near zero here, which is what turns it into a refusal. Shown so an
+   * operator can see how closely an answer tracks its sources rather than
+   * taking `grounded` on trust.
+   */
+  answerSupport: number;
   modelId: string;
   retrievalMs: number;
   generationMs: number;
+}
+
+/** What an operational knowledge install did. Mirrors `knowledge_pack::InstallReport`. */
+export interface InstallReport {
+  documentsInstalled: number;
+  /** Reported separately from installed, so a repeat install visibly does nothing. */
+  documentsAlreadyPresent: number;
+  chunksCreated: number;
+}
+
+/** Counts of local knowledge. Mirrors `ai::KnowledgeBaseSummary`. */
+export interface KnowledgeBaseSummary {
+  operationalDocuments: number;
+  importedDocuments: number;
+  /** Incidents holding a vector, and therefore actually searchable. */
+  liveIncidentsIndexed: number;
+  /** All incidents held. A gap from the indexed count means indexing is
+   *  catching up — normal, not an error. */
+  liveIncidentsTotal: number;
+  chunks: number;
+  vectors: number;
+  packDocumentsAvailable: number;
+  packInstalled: boolean;
 }
 
 /** Mirrors `ai::IndexReport`. */

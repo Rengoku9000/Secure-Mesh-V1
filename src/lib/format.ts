@@ -68,5 +68,21 @@ export function formatLocation(
   if (latitude === null || longitude === null) {
     return "No location";
   }
-  return `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+  // Six places is roughly a tenth of a metre — finer than any source here
+  // resolves, but it is what the coordinates were recorded as, and rounding a
+  // record for display invites someone to read the rounding as the precision.
+  return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+}
+
+/**
+ * Renders an accuracy radius, or says plainly that none was recorded.
+ *
+ * "unavailable" rather than a blank or a zero: a missing figure means nobody
+ * measured, which is different from a measurement of nothing.
+ */
+export function formatAccuracy(meters: number | null): string {
+  if (meters === null) {
+    return "unavailable";
+  }
+  return meters < 10 ? `±${meters.toFixed(1)} m` : `±${Math.round(meters)} m`;
 }

@@ -38,6 +38,29 @@ function formatAccuracy(meters: number | null): string {
   return meters < 10 ? `±${meters.toFixed(1)} m` : `±${Math.round(meters)} m`;
 }
 
+/** How coordinates are written into the form, and therefore how a captured
+ *  position is compared against what is about to be submitted. */
+const COORDINATE_PLACES = 6;
+
+/**
+ * Whether the fields still hold the position that was captured.
+ *
+ * The coordinate fields stay editable after a capture. If the operator corrects
+ * them, the accuracy and source no longer describe what is in the form, and
+ * submitting them anyway would attach a satellite-grade claim to hand-typed
+ * numbers. So provenance travels only while the numbers are untouched.
+ */
+function fieldsStillHoldTheFix(
+  fix: DeviceLocation,
+  latitude: string,
+  longitude: string,
+): boolean {
+  return (
+    latitude.trim() === fix.latitude.toFixed(COORDINATE_PLACES) &&
+    longitude.trim() === fix.longitude.toFixed(COORDINATE_PLACES)
+  );
+}
+
 interface CreateIncidentDialogProps {
   onClose: () => void;
   onCreated: (incident: Incident) => void;
@@ -168,11 +191,24 @@ export function CreateIncidentDialog({ onClose, onCreated }: CreateIncidentDialo
 
     setSubmitting(true);
     try {
+      // Provenance describes a measurement. It is sent only when the fields
+      // still hold that measurement, and never for coordinates typed by hand —
+      // the core refuses metadata without coordinates, and this refuses
+      // metadata that would misdescribe them.
+      const measured =
+        location !== null &&
+        lat !== null &&
+        lon !== null &&
+        fieldsStillHoldTheFix(location, latitude, longitude);
+
       const incident = await createIncident({
         description,
         severity,
         latitude: lat,
         longitude: lon,
+        accuracyMeters: measured ? location.accuracyMeters : null,
+        locationSource: measured ? location.source : null,
+        locationCapturedAt: measured ? location.capturedAt : null,
       });
       onCreated(incident);
       onClose();
@@ -251,8 +287,6 @@ export function CreateIncidentDialog({ onClose, onCreated }: CreateIncidentDialo
               </select>
             </div>
 
-            <div className="field-row">
-              <div className="field">
             {/* Location is captured on request only — never when the form
                 opens — and what is shown here is exactly what will be stored. */}
             <div className="location-capture">
@@ -304,6 +338,12 @@ export function CreateIncidentDialog({ onClose, onCreated }: CreateIncidentDialo
                       <dt>Source</dt>
                       <dd>{SOURCE_LABEL[location.source]}</dd>
                     </div>
+                    <div>
+                      <dt>Captured</dt>
+                      <dd className="mono">
+                        {new Date(location.capturedAt).toLocaleTimeString()}
+                      </dd>
+                    </div>
                   </dl>
                 </div>
               )}
@@ -328,6 +368,8 @@ export function CreateIncidentDialog({ onClose, onCreated }: CreateIncidentDialo
               </span>
             </div>
 
+            <div className="field-row">
+              <div className="field">
                 <label className="field__label" htmlFor="incident-latitude">
                   Latitude
                 </label>
@@ -355,7 +397,9 @@ export function CreateIncidentDialog({ onClose, onCreated }: CreateIncidentDialo
               </div>
             </div>
             <span className="field__hint">
-              Location is optional. Leave both fields blank if unknown.
+              {location !== null && !fieldsStillHoldTheFix(location, latitude, longitude)
+                ? "Coordinates edited by hand. Accuracy and source will not be recorded, because they no longer describe these numbers."
+                : "Location is optional. Leave both fields blank if unknown."}
             </span>
 
             <div className="form-actions">

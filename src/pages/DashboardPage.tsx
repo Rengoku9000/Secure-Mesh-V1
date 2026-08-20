@@ -5,9 +5,12 @@ import { NodeHeader } from "../features/dashboard/NodeHeader";
 import { NodeIdentityPanel } from "../features/dashboard/NodeIdentityPanel";
 import { SystemStatusPanel } from "../features/dashboard/SystemStatusPanel";
 import { CreateIncidentDialog } from "../features/incidents/CreateIncidentDialog";
+import { IncidentDetailsDialog } from "../features/incidents/IncidentDetailsDialog";
 import { IncidentTable } from "../features/incidents/IncidentTable";
+import { TacticalMap } from "../features/map/TacticalMap";
 import { AskSecureMesh } from "../features/intelligence/AskSecureMesh";
 import { IntelligencePanel } from "../features/intelligence/IntelligencePanel";
+import { KnowledgeBasePanel } from "../features/intelligence/KnowledgeBasePanel";
 import { PeerPanel } from "../features/network/PeerPanel";
 import {
   CoreError,
@@ -68,6 +71,13 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // One selection, shared by the map popup, the table highlight and the map
+  // camera. Whether the details *dialog* is open is a different question —
+  // clicking a marker shows its card, and only "View incident" opens the full
+  // record — so that is tracked separately rather than by overloading
+  // selection with two meanings.
+  const [selected, setSelected] = useState<Incident | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -154,6 +164,25 @@ export function DashboardPage() {
           </span>
         </div>
 
+        {/* Full width, above the grid. The map is the fastest way to read
+            where things are, and it shares the dashboard's single selection
+            state with the timeline below rather than keeping its own. */}
+        <div className="dashboard-map">
+          <TacticalMap
+            incidents={incidents}
+            peers={peers}
+            identity={identity}
+            indexStates={indexStates}
+            status={systemStatus?.map}
+            selected={selected}
+            onSelect={setSelected}
+            onOpenDetails={(incident) => {
+              setSelected(incident);
+              setDetailsOpen(true);
+            }}
+          />
+        </div>
+
         <div className="dashboard-grid">
           <Panel
             title="Recent incidents"
@@ -177,6 +206,10 @@ export function DashboardPage() {
             incidents={incidents}
             loading={loading}
             indexStates={indexStates}
+            onSelect={(incident) => {
+              setSelected(incident);
+              setDetailsOpen(true);
+            }}
           />
           </Panel>
 
@@ -190,6 +223,10 @@ export function DashboardPage() {
               onChanged={() => void refresh()}
             />
             <IntelligencePanel status={intelligence} />
+            <KnowledgeBasePanel
+              status={intelligence}
+              onChanged={() => void refresh()}
+            />
             <SystemStatusPanel status={systemStatus} />
             <NodeIdentityPanel identity={identity} />
           </div>
@@ -210,6 +247,17 @@ export function DashboardPage() {
             // timeline and the counts always reflect what was persisted.
             void refresh();
           }}
+        />
+      )}
+
+      {selected && detailsOpen && (
+        <IncidentDetailsDialog
+          // Re-read from the current list so the dialog follows a refresh
+          // rather than showing a snapshot taken when the row was clicked.
+          incident={incidents.find((item) => item.id === selected.id) ?? selected}
+          // Closing the record leaves it selected, so the map keeps its
+          // highlight and popup where the operator left them.
+          onClose={() => setDetailsOpen(false)}
         />
       )}
     </div>

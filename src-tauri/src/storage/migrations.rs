@@ -34,6 +34,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "local_intelligence",
         sql: include_str!("../../migrations/004_local_intelligence.sql"),
     },
+    Migration {
+        version: 5,
+        name: "location_metadata",
+        sql: include_str!("../../migrations/005_location_metadata.sql"),
+    },
 ];
 
 struct Migration {

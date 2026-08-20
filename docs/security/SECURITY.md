@@ -459,7 +459,10 @@ persistence, event signing, peer authorization and QUIC transport unchanged.
 | Optional | An incident with no coordinates is fully valid. No receiver, refused permission or a timed-out fix cannot block capture, replication or indexing |
 | Snapshot | `getCurrentPosition` only. No `watchPosition`, no movement history |
 | Never invented | A provider that cannot answer returns an error. There is no default coordinate and no last-known fallback |
-| Not audited on read | A sensor read is an observation, not a state change (§6.4). `incident.created` already records the coordinates kept |
+| Not audited on read | A sensor read is an observation, not a state change (§6.4) |
+| Coordinates never reach the audit log | An audit trail is a security record, not a movement log. Writing a position on every incident would build a track of where the operator has been — a worse disclosure than anything it would prove. `tests/incident_location_metadata.rs` asserts no coordinate or accuracy figure appears in a captured audit run |
+| Provenance is signed, not adjacent | `accuracyMeters`, `locationSource` and `locationCapturedAt` live **inside** `IncidentCreatedPayload`, so the existing event signature covers them. A peer cannot alter how trustworthy a position claims to be without invalidating the event |
+| Peer input is re-validated | The apply path rebuilds every incoming position through `Location::new`, the same constructor the local command path uses. A valid signature proves authorship, not sanity |
 
 **Source is reported, not assumed.** A desktop rarely has a GNSS receiver;
 Windows still answers by triangulating Wi-Fi or resolving the IP address. Those
@@ -469,12 +472,96 @@ not offline-derived either. Each fix therefore carries its source and accuracy
 exactly as the platform reported them. Measured on the development machine:
 `Wireless`, **±165 m** — deliberately not labelled satellite.
 
-Only a satellite fix is offline-capable, and `LocationSource::works_offline`
-is the single place that rule is expressed.
+**Windows Wireless positioning is not offline.** It requires the operating
+system to reach a lookup service. SecureMesh does not make that call and has no
+HTTP client on this path, but neither fact makes the resulting position
+offline-derived, and this document does not claim otherwise. Only a satellite
+fix is offline-capable, and `LocationSource::works_offline` is the single place
+that rule is expressed.
+
+**The record keeps a coarser vocabulary than the device reports.** Stored
+provenance is `GNSS`, `WIRELESS` or `UNKNOWN`. An IP-derived position is
+recorded as `UNKNOWN` rather than `WIRELESS`: it resolves to a city, and
+bucketing it with a Wi-Fi fix two orders of magnitude better would overclaim. The
+accuracy radius travels with it, so the reading arrives as unattested provenance
+carrying a figure in the tens of kilometres.
+
+**Provenance is never fabricated.** A missing accuracy is `null`, never `0` —
+absence of measurement, not measurement of nothing. Migration 005 leaves every
+pre-existing incident at `NULL` and does **not** copy `created_at` into
+`location_captured_at`: filing time is not measurement time. In the UI,
+provenance is submitted only while the coordinate fields still hold the captured
+values; editing them by hand drops the accuracy and source rather than
+attaching a satellite-grade claim to typed numbers.
 
 **Location is operationally sensitive.** It is treated as incident content: it
 replicates only to authorized peers, over encrypted QUIC, and only once an
 operator has enrolled them.
+
+### 5.18 The offline map contacts nothing
+
+The tactical map is a visualization layer over state SecureMesh already holds.
+It reads incidents and the device position through existing commands, writes
+nothing, and makes no network request of any kind.
+
+| Property | Mechanism |
+|---|---|
+| No online map provider | No tile server, style server, glyph host, sprite host or geocoder. `tests/local_map.rs` and `src/features/map/offline.test.ts` scan the Rust module, the commands and the whole frontend layer for Mapbox, Google, OpenStreetMap, ArcGIS, Bing, HERE, MapTiler and Stadia |
+| No transport exists | No HTTP client, `fetch`, `XMLHttpRequest`, `WebSocket` or raw socket anywhere on the map path. Not disabled — absent |
+| No API key | Nothing to hold, because nothing is called. Asserted by the same scans |
+| No CSP change | The renderer is SVG drawn in-process. `worker-src`, `connect-src` and `img-src blob:` remain unbroadened, and `capabilities/default.json` remains `core:default` |
+| Nothing downloaded | Map data is a file an operator installs. No fetch at startup, at provisioning, or on demand |
+| Not a source of truth | The map module names no database type; a test asserts it. Incidents remain authoritative in SQLite |
+| No tracking | No `watchPosition` and no movement history. React never touches a platform location API — position comes only from the core's existing `LocationProvider` |
+
+**The renderer was chosen by the CSP, not by preference.** MapLibre GL JS spawns
+workers from `blob:` URLs, which `default-src 'self'` blocks. Admitting it would
+have meant weakening a real boundary for a cosmetic gain, so the map is drawn
+with SecureMesh's own code instead. The offline property is therefore structural
+rather than configured: there is no setting that could turn a map request on.
+
+**A provisioned basemap is inert data.** It is parsed as GeoJSON and drawn as
+SVG paths. Only geometry, a `kind` classification and place names are read;
+every other field is ignored. No field is ever interpreted as a URL, and nothing
+in it can cause a request, because the renderer has no way to make one. Files
+are validated before use and capped at 25 MB, so a malformed or oversized file
+is refused with a reason rather than stalling the UI. A file lacking SecureMesh's
+`kind` classification renders as nothing rather than as unreadable geometry.
+
+**Extraction is separate from the application.** The demonstration basemap was
+produced by `scripts/extract-osm-basemap.mjs`, an operator-run tool that
+queries OpenStreetMap once and writes a file. It is not part of the shipped
+binary and is not invoked by it. The distinction matters: obtaining map data is
+a deliberate, auditable act performed by a person, and running the application
+is not.
+
+**Geography is local to a node and never replicates.** An incident's
+coordinates travel inside its signed event; the basemap under them does not.
+Each node provisions its own, and two nodes with different map data still agree
+exactly on where an incident is. `tests/local_map.rs` asserts that no basemap
+geometry reaches the event log and that the sync protocol has no message type
+that could carry one.
+
+**Attribution is inside the data.** The OSM attribution and ODbL licence are
+top-level members of `basemap.geojson`, so copying the file carries them with
+it. Distributing SecureMesh with this extract carries ODbL obligations; see
+`docs/map/PROVISIONING.md`.
+
+**Map availability is not network availability.** They are separate status rows
+because they answer different questions. A node with no network still has its
+map; a node with a network still has no map until one is provisioned. The status
+row never reports "Ready" when no data is installed.
+
+**Position provenance is unchanged by the map.** The map draws what the
+incident record already carries — accuracy, source and capture time — and
+refuses to draw an accuracy circle for a reading that recorded none. Drawing a
+default radius would invent precision that was never measured. See §5.17.
+
+**The map being offline says nothing about how a position was obtained.** On
+Windows the platform provider may use network-assisted positioning, which is
+why such a fix is recorded as `WIRELESS` rather than `GNSS`. A dedicated GNSS
+receiver would provide positioning independently of Internet connectivity; that
+is future hardware work and the map does not change it.
 
 ### 5.9 Hostile input from the network
 
@@ -727,17 +814,51 @@ valuable but much narrower claim.
 
 ### 6.19 Retrieval quality is not answer correctness
 
-Grounding is checked at the level of *citation*. The answer schema requires a
-`sources` field, so a model cannot answer without naming the passages it used;
-each number is then verified against what was actually supplied, and any that
-was not is discarded and counted in `droppedCitations`. Nothing verifies that
-the answer's claims follow from the passage it cites.
+Grounding is checked at three levels, each catching what the one before cannot.
 
-A model can therefore cite a real source and still state something the source
-does not support — or cite a passage it did not actually use. The UI
-distinguishes grounded from ungrounded answers and surfaces dropped citations,
-which is a weaker guarantee than "the answer is correct" and is labelled
+**Citation exists.** The answer schema requires a `sources` field, so a model
+cannot answer without naming the passages it used. Each number is verified
+against what was actually supplied; any that was not is discarded and counted in
+`droppedCitations`.
+
+**The answer rests on the cited text.** Citation alone proved insufficient once
+the corpus grew. Measured on this machine with the operational knowledge pack
+installed: asked "What is the capital of France?", retrieval returned five
+emergency-procedure passages scoring 0.38–0.40 — above the 0.35 relevance
+threshold, because with eleven documents of English prose *something* is always
+slightly related to any English sentence. The model then set `sufficient` to
+true, cited all five, and answered "Paris". Every existing gate had passed.
+
+So the answer's content words are compared against the passages it cites, and an
+answer scoring below `MIN_ANSWER_SUPPORT` becomes the canonical refusal instead
+of being shown. The margin is wide: on the same run, genuine answers scored
+above 0.8 and "Paris" scored 0.00. This is deliberately a *containment* check,
+not a correctness one — it catches an answer that came from the model's training
+rather than the node's records, which is the failure that matters here.
+
+**What is still not verified.** That the answer's claims are *entailed* by the
+passage. A model can quote a real passage and still draw the wrong conclusion
+from it, and no check here would notice. The UI distinguishes grounded from
+ungrounded answers, surfaces dropped citations, and shows the support percentage;
+that is a weaker guarantee than "the answer is correct" and is labelled
 accordingly.
+
+**The known limitation of the support check.** It assumes the generator *quotes*
+its context. Qwen2.5-1.5B does — measured across six questions on this machine,
+genuine answers scored 0.93–1.00 against a 0.40 threshold — but a more
+abstractive model that paraphrased heavily could be refused despite being
+correctly grounded. The failure direction is toward refusal, which is the safe
+one here, and `MIN_ANSWER_SUPPORT` is a named constant precisely because it is a
+judgement about a particular generator rather than a fact.
+
+Support is measured against **every retrieved passage**, not only the cited ones.
+The check asks whether the answer came out of the node's records or out of the
+model, and the records shown to the model are all of them. Scoring against cited
+passages alone produced false refusals: the model routinely writes an answer
+drawn from passages two and three while naming only source one, which scored a
+correct answer at 0.08. Under-citation is a real defect but a different one, and
+is already surfaced by `grounded` and the per-source "retrieved, not cited"
+label.
 
 ### 6.20 Evaluation figures come from synthetic data
 

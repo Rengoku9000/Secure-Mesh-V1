@@ -78,6 +78,33 @@ impl LocationSource {
     }
 }
 
+/// Translates a platform reading into the vocabulary an incident record keeps.
+///
+/// The record deliberately holds a coarser set than the platform reports. It
+/// keeps the one distinction that changes a decision — did this come off a
+/// satellite, or did it not — and drops detail a reader could not act on.
+///
+/// `IpAddress` collapses to `Unknown` rather than to `Wireless`. An IP lookup
+/// resolves to a city; calling it wireless would put it in the same bucket as a
+/// Wi-Fi fix two orders of magnitude better. The accuracy radius travels with
+/// it, so such a reading is stored as unknown provenance carrying a figure in
+/// the tens of kilometres, which is an honest description of what it is.
+///
+/// The same table is expressed as serde aliases on
+/// [`crate::domain::LocationSource`], which is how a value arriving as JSON from
+/// the UI is mapped. A test asserts the two agree on every variant.
+impl From<LocationSource> for crate::domain::LocationSource {
+    fn from(source: LocationSource) -> Self {
+        match source {
+            LocationSource::Satellite => crate::domain::LocationSource::Gnss,
+            LocationSource::Wireless => crate::domain::LocationSource::Wireless,
+            LocationSource::IpAddress | LocationSource::Unknown => {
+                crate::domain::LocationSource::Unknown
+            }
+        }
+    }
+}
+
 /// Whether this device will give SecureMesh a position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]

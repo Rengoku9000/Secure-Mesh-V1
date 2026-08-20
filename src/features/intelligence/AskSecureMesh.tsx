@@ -1,7 +1,32 @@
 import { useState, type FormEvent } from "react";
 import { Panel } from "../../components/Panel";
 import { askSecureMesh, CoreError } from "../../lib/ipc";
-import type { GroundedAnswer, IntelligenceStatus } from "../../types/core";
+import type {
+  GroundedAnswer,
+  IntelligenceStatus,
+  PassageSource,
+} from "../../types/core";
+
+/**
+ * What each citation is, in words rather than an enum name.
+ *
+ * Shown on every source because the two kinds carry different weight: an
+ * operational document is standing guidance that was provisioned onto this
+ * device, while a live incident is one unverified field report. An answer that
+ * synthesises both must let a reader see which half came from where.
+ */
+const SOURCE_LABEL: Record<PassageSource, string> = {
+  OPERATIONAL_KNOWLEDGE: "Operational Knowledge",
+  LIVE_INCIDENT: "Live Incident",
+  IMPORTED_DOCUMENT: "Imported Document",
+};
+
+/** Class suffix per source type, so the label is distinguishable at a glance. */
+const SOURCE_MODIFIER: Record<PassageSource, string> = {
+  OPERATIONAL_KNOWLEDGE: "operational",
+  LIVE_INCIDENT: "incident",
+  IMPORTED_DOCUMENT: "imported",
+};
 
 interface AskSecureMeshProps {
   status: IntelligenceStatus | null;
@@ -45,7 +70,7 @@ export function AskSecureMesh({ status }: AskSecureMeshProps) {
   return (
     <Panel
       title="Ask SecureMesh"
-      subtitle={ready ? "Answered from local records only" : "Requires a local model"}
+      subtitle={ready ? "Answered from local knowledge only" : "Requires a local model"}
     >
       <form className="form-grid" onSubmit={handleSubmit}>
         <div className="field">
@@ -99,18 +124,26 @@ export function AskSecureMesh({ status }: AskSecureMeshProps) {
             }`}
           >
             {answer.refused
-              ? "NO ANSWER IN LOCAL DATA"
+              ? "NO RELEVANT LOCAL KNOWLEDGE"
               : answer.grounded
-                ? "GROUNDED IN LOCAL DATA"
+                ? "ANSWERED FROM LOCAL KNOWLEDGE"
                 : "MODEL INTERPRETATION — NOT CITED"}
           </div>
 
           <p className="answer__text">{answer.answer}</p>
 
+          {answer.refused && (
+            <p className="intelligence-detail">
+              {answer.generationMs === 0
+                ? "Nothing in this node's local knowledge was close enough to the question to answer it, so the model was never called. If the operational knowledge pack is not installed, installing it gives the node standing field guidance to answer from."
+                : "The model produced an answer that its cited passages do not support, so it was discarded rather than shown. That is what an answer drawn from the model's own training looks like from here."}
+            </p>
+          )}
+
           {!answer.refused && !answer.grounded && (
             <p className="intelligence-detail">
               The model did not cite any retrieved passage, so this answer is its
-              own interpretation rather than something the local records state.
+              own interpretation rather than something the local knowledge states.
             </p>
           )}
 
@@ -134,6 +167,11 @@ export function AskSecureMesh({ status }: AskSecureMeshProps) {
                   >
                     <div className="source__header">
                       <span className="source__marker mono">[{source.marker}]</span>
+                      <span
+                        className={`source__type source__type--${SOURCE_MODIFIER[source.source]}`}
+                      >
+                        {SOURCE_LABEL[source.source]}
+                      </span>
                       <span className="source__title">{source.title}</span>
                       <span className="source__score mono">
                         {source.score.toFixed(2)}
@@ -150,8 +188,10 @@ export function AskSecureMesh({ status }: AskSecureMeshProps) {
           )}
 
           <p className="answer__timing mono">
-            retrieval {answer.retrievalMs} ms · generation {answer.generationMs} ms ·{" "}
-            {answer.modelId}
+            retrieval {answer.retrievalMs} ms · generation {answer.generationMs} ms
+            {!answer.refused &&
+              ` · support ${(answer.answerSupport * 100).toFixed(0)}%`}{" "}
+            · {answer.modelId}
           </p>
         </div>
       )}

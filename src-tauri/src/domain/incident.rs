@@ -115,11 +115,186 @@ impl FromStr for SyncStatus {
     }
 }
 
-/// A geographic position, in WGS 84 decimal degrees.
+/// Where a position came from.
+///
+/// Provenance is recorded because it is the difference between a coordinate a
+/// responder can act on and one they cannot. The three variants are the
+/// distinctions that change a decision; finer detail about which constellation
+/// or which access point produced a fix does not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum LocationSource {
+    /// A satellite fix — GPS, GLONASS, Galileo or BeiDou. The only source that
+    /// works with no network of any kind.
+    #[serde(alias = "SATELLITE")]
+    Gnss,
+    /// Derived by the operating system from nearby Wi-Fi or cellular
+    /// infrastructure. Usually accurate to tens or hundreds of metres, and on
+    /// most platforms it requires the OS to reach a lookup service, so it is
+    /// not an offline capability.
+    Wireless,
+    /// Provenance was not recorded: a coordinate typed by hand, a reading whose
+    /// source the platform would not name, or an incident written by a build
+    /// that predates this field.
+    ///
+    /// An IP-address-derived position also lands here. The platform layer can
+    /// tell that case apart and the capture panel shows it, but the record does
+    /// not keep the distinction: an IP lookup is a city-sized guess, and the
+    /// honest thing for a stored coordinate to say is that its provenance is
+    /// not something to rely on. The accuracy figure carries the magnitude —
+    /// such a reading arrives as UNKNOWN with a radius in the tens of
+    /// kilometres, which is exactly what it is.
+    #[default]
+    #[serde(alias = "IP_ADDRESS")]
+    Unknown,
+}
+
+impl LocationSource {
+    pub const ALL: [LocationSource; 3] = [
+        LocationSource::Gnss,
+        LocationSource::Wireless,
+        LocationSource::Unknown,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LocationSource::Gnss => "GNSS",
+            LocationSource::Wireless => "WIRELESS",
+            LocationSource::Unknown => "UNKNOWN",
+        }
+    }
+
+    /// Whether a position from this source could have been obtained with no
+    /// network reachable.
+    ///
+    /// Only satellite positioning qualifies. This is the honesty check that
+    /// stops SecureMesh describing a Wi-Fi-derived coordinate as evidence of
+    /// offline capability.
+    pub fn works_offline(self) -> bool {
+        matches!(self, LocationSource::Gnss)
+    }
+}
+
+impl fmt::Display for LocationSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for LocationSource {
+    type Err = CoreError;
+
+    fn from_str(value: &str) -> CoreResult<Self> {
+        match value.trim().to_ascii_uppercase().as_str() {
+            // The aliases accept the platform layer's vocabulary, so the
+            // mapping between the two lives here and nowhere else. Both the UI
+            // and a peer's payload are parsed by this one function.
+            "GNSS" | "SATELLITE" => Ok(LocationSource::Gnss),
+            "WIRELESS" => Ok(LocationSource::Wireless),
+            "UNKNOWN" | "IP_ADDRESS" => Ok(LocationSource::Unknown),
+            _ => Err(CoreError::validation(
+                "location source must be one of GNSS, WIRELESS, UNKNOWN",
+            )),
+        }
+    }
+}
+
+/// Largest accepted accuracy radius, in metres.
+///
+/// Half the Earth's circumference: past this the figure is not a measurement of
+/// anything. The bound rejects nonsense, not poor fixes — a genuinely bad
+/// reading should arrive intact and be shown as bad.
+pub const MAX_ACCURACY_METERS: f64 = 20_000_000.0;
+
+/// A geographic position, in WGS 84 decimal degrees, with the provenance needed
+/// to judge it.
+///
+/// This is the only place coordinate rules live. Both the local command path
+/// and events arriving from peers construct one through [`Location::new`], so a
+/// remote node cannot write a position a local operator would have been refused.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Location {
     pub latitude: f64,
     pub longitude: f64,
+    /// Radius of the reported confidence circle, in metres.
+    ///
+    /// `None` means the reading carried no accuracy figure — not that it was
+    /// perfect. Nothing infers a value when the platform declines to give one.
+    pub accuracy_meters: Option<f64>,
+    pub source: LocationSource,
+    /// When the position was measured, which is not when the incident was
+    /// filed. A stale fix attached to a fresh incident is a real failure mode,
+    /// and the two timestamps are what let a reader notice it.
+    ///
+    /// `None` for hand-entered coordinates and for incidents written before
+    /// this field existed.
+    pub captured_at: Option<DateTime<Utc>>,
+}
+
+impl Location {
+    /// Validates a position and its provenance.
+    ///
+    /// Rules enforced here:
+    /// - coordinates are finite and within valid WGS 84 ranges;
+    /// - accuracy, when present, is finite and between 0 and
+    ///   [`MAX_ACCURACY_METERS`].
+    ///
+    /// A negative or non-finite accuracy is rejected rather than dropped: it
+    /// means the sender is confused about its own reading, and silently
+    /// discarding the figure would present the coordinate as better attested
+    /// than it is.
+    pub fn new(
+        latitude: f64,
+        longitude: f64,
+        accuracy_meters: Option<f64>,
+        source: LocationSource,
+        captured_at: Option<DateTime<Utc>>,
+    ) -> CoreResult<Self> {
+        if !latitude.is_finite() || !longitude.is_finite() {
+            return Err(CoreError::validation("coordinates must be finite numbers"));
+        }
+        if !(-90.0..=90.0).contains(&latitude) {
+            return Err(CoreError::validation(
+                "latitude must be between -90 and 90 degrees",
+            ));
+        }
+        if !(-180.0..=180.0).contains(&longitude) {
+            return Err(CoreError::validation(
+                "longitude must be between -180 and 180 degrees",
+            ));
+        }
+
+        if let Some(accuracy) = accuracy_meters {
+            if !accuracy.is_finite() {
+                return Err(CoreError::validation(
+                    "location accuracy must be a finite number",
+                ));
+            }
+            if accuracy < 0.0 {
+                return Err(CoreError::validation(
+                    "location accuracy must not be negative",
+                ));
+            }
+            if accuracy > MAX_ACCURACY_METERS {
+                return Err(CoreError::validation(
+                    "location accuracy is implausibly large",
+                ));
+            }
+        }
+
+        Ok(Location {
+            latitude,
+            longitude,
+            accuracy_meters,
+            source,
+            // The platform reports microseconds and the database keeps
+            // milliseconds. Truncating here rather than on the way to disk
+            // means a validated position equals the one read back, which is
+            // what replication comparisons rely on.
+            captured_at: captured_at.map(super::to_storage_precision),
+        })
+    }
 }
 
 /// A persisted incident. Every instance has already passed validation.
@@ -133,9 +308,39 @@ pub struct Incident {
     pub severity: Severity,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
+    /// Reported accuracy radius in metres. Meaningless without coordinates,
+    /// and `None` whenever the reading carried no figure.
+    pub accuracy_meters: Option<f64>,
+    /// Provenance of the coordinates. `Unknown` for hand-entered positions and
+    /// for incidents recorded before this field existed.
+    pub location_source: LocationSource,
+    /// When the position was measured, as distinct from `created_at`, which is
+    /// when the incident was filed.
+    pub location_captured_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub sync_status: SyncStatus,
+}
+
+impl Incident {
+    /// The position as a single value, or `None` if this incident has no
+    /// coordinates.
+    ///
+    /// The fields are stored flat because that is how they are stored in SQLite
+    /// and sent over IPC; this regroups them for code that reasons about a
+    /// position as one thing.
+    pub fn location(&self) -> Option<Location> {
+        match (self.latitude, self.longitude) {
+            (Some(latitude), Some(longitude)) => Some(Location {
+                latitude,
+                longitude,
+                accuracy_meters: self.accuracy_meters,
+                source: self.location_source,
+                captured_at: self.location_captured_at,
+            }),
+            _ => None,
+        }
+    }
 }
 
 /// A note appended to an incident.
@@ -167,6 +372,14 @@ pub struct NewIncident {
     pub severity: String,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
+    /// Optional in the wire form so an older client, or a hand-typed
+    /// coordinate, is still accepted. Absent means unknown, never zero.
+    #[serde(default)]
+    pub accuracy_meters: Option<f64>,
+    #[serde(default)]
+    pub location_source: Option<LocationSource>,
+    #[serde(default)]
+    pub location_captured_at: Option<DateTime<Utc>>,
 }
 
 impl NewIncident {
@@ -177,7 +390,13 @@ impl NewIncident {
     ///   [`MAX_DESCRIPTION_CHARS`] characters;
     /// - severity is one of the four accepted labels (case-insensitive);
     /// - latitude and longitude are supplied together or not at all;
-    /// - coordinates are finite and within valid WGS 84 ranges.
+    /// - coordinates are finite and within valid WGS 84 ranges;
+    /// - accuracy is finite and non-negative when present;
+    /// - location metadata is not supplied without coordinates to describe.
+    ///
+    /// That last rule matters: accuracy or a capture time with no position is
+    /// either a client bug or an attempt to imply a measurement that was never
+    /// taken, and neither should reach a signed record.
     pub fn validate(self, author_node_id: &str) -> CoreResult<Incident> {
         let description = self.description.trim();
         if description.is_empty() {
@@ -191,24 +410,25 @@ impl NewIncident {
 
         let severity: Severity = self.severity.parse()?;
 
-        let (latitude, longitude) = match (self.latitude, self.longitude) {
-            (None, None) => (None, None),
-            (Some(lat), Some(lon)) => {
-                if !lat.is_finite() || !lon.is_finite() {
-                    return Err(CoreError::validation("coordinates must be finite numbers"));
-                }
-                if !(-90.0..=90.0).contains(&lat) {
+        let location = match (self.latitude, self.longitude) {
+            (None, None) => {
+                if self.accuracy_meters.is_some()
+                    || self.location_source.is_some()
+                    || self.location_captured_at.is_some()
+                {
                     return Err(CoreError::validation(
-                        "latitude must be between -90 and 90 degrees",
+                        "location metadata requires coordinates",
                     ));
                 }
-                if !(-180.0..=180.0).contains(&lon) {
-                    return Err(CoreError::validation(
-                        "longitude must be between -180 and 180 degrees",
-                    ));
-                }
-                (Some(lat), Some(lon))
+                None
             }
+            (Some(lat), Some(lon)) => Some(Location::new(
+                lat,
+                lon,
+                self.accuracy_meters,
+                self.location_source.unwrap_or_default(),
+                self.location_captured_at,
+            )?),
             _ => {
                 return Err(CoreError::validation(
                     "latitude and longitude must be provided together",
@@ -226,8 +446,11 @@ impl NewIncident {
             created_by: author_node_id.to_string(),
             description: description.to_string(),
             severity,
-            latitude,
-            longitude,
+            latitude: location.map(|position| position.latitude),
+            longitude: location.map(|position| position.longitude),
+            accuracy_meters: location.and_then(|position| position.accuracy_meters),
+            location_source: location.map_or(LocationSource::Unknown, |position| position.source),
+            location_captured_at: location.and_then(|position| position.captured_at),
             created_at: now,
             updated_at: now,
             // Phase 1 has no networking, so everything starts unsynchronised.
@@ -248,6 +471,9 @@ mod tests {
             severity: severity.to_string(),
             latitude: None,
             longitude: None,
+            accuracy_meters: None,
+            location_source: None,
+            location_captured_at: None,
         }
     }
 

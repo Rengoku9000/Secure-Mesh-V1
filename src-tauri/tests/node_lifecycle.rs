@@ -19,6 +19,9 @@ fn incident(description: &str, severity: &str) -> NewIncident {
         severity: severity.to_string(),
         latitude: None,
         longitude: None,
+        accuracy_meters: None,
+        location_source: None,
+        location_captured_at: None,
     }
 }
 
@@ -28,6 +31,9 @@ fn located(description: &str, severity: &str, lat: f64, lon: f64) -> NewIncident
         severity: severity.to_string(),
         latitude: Some(lat),
         longitude: Some(lon),
+        accuracy_meters: None,
+        location_source: None,
+        location_captured_at: None,
     }
 }
 

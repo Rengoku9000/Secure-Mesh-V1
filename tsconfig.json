@@ -21,5 +21,11 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
+  // Test files run under Node's own runner (`npm run test:map`), which strips
+  // types rather than checking them, and they import `node:test` — a module
+  // this project has no type package for. Excluding them keeps the dependency
+  // list at three runtime packages and nothing else; the test run itself is
+  // what catches a test that has drifted from the code it exercises.
+  "exclude": ["src/**/*.test.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

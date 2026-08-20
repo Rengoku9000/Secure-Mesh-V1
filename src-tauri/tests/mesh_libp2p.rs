@@ -106,6 +106,9 @@ fn incident(description: &str) -> NewIncident {
         severity: "HIGH".to_string(),
         latitude: None,
         longitude: None,
+        accuracy_meters: None,
+        location_source: None,
+        location_captured_at: None,
     }
 }
 
@@ -181,8 +184,20 @@ fn two_nodes_discover_authenticate_and_synchronise_over_quic() {
         .unwrap();
 
     // 3. Replication over the encrypted session, now that it is authorized.
-    a.runtime
-        .create_incident(incident("QUIC replication works"))
+    //
+    // Carrying a fully described position, so what crosses the wire is the
+    // shape a real capture produces rather than a bare coordinate pair.
+    let measured_at = chrono::Utc::now() - chrono::Duration::seconds(45);
+    let authored = a
+        .runtime
+        .create_incident(NewIncident {
+            latitude: Some(13.133599),
+            longitude: Some(77.565330),
+            accuracy_meters: Some(4.5),
+            location_source: Some(securemesh_lib::domain::LocationSource::Gnss),
+            location_captured_at: Some(measured_at),
+            ..incident("QUIC replication works")
+        })
         .unwrap();
 
     wait_until(&[&a, &b], "the incident to reach node B", || {
@@ -195,6 +210,25 @@ fn two_nodes_discover_authenticate_and_synchronise_over_quic() {
         replicated.created_by, a.node_id,
         "authorship must survive replication"
     );
+
+    // Node B has no location hardware and took no reading. Everything needed to
+    // judge the coordinates arrived inside the same signed event, over the one
+    // authorized path — there is no second location channel.
+    assert_eq!(replicated.latitude, Some(13.133599));
+    assert_eq!(replicated.longitude, Some(77.565330));
+    assert_eq!(replicated.accuracy_meters, Some(4.5));
+    assert_eq!(
+        replicated.location_source,
+        securemesh_lib::domain::LocationSource::Gnss
+    );
+    // Compared against what node A persisted, not against the raw input: the
+    // core truncates a capture time to the precision the database keeps, and
+    // the property under test is that replication changes nothing further.
+    assert_eq!(
+        replicated.location_captured_at,
+        authored.location_captured_at
+    );
+    assert!(authored.location_captured_at.unwrap() <= measured_at);
 
     // 4. Bidirectional.
     b.runtime

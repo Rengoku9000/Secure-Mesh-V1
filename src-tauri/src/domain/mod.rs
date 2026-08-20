@@ -13,7 +13,9 @@ pub mod peer;
 pub mod trust;
 
 pub use event::{EventKind, IncidentCreatedPayload, IncidentObservationPayload, MeshEvent};
-pub use incident::{Incident, NewIncident, Observation, Severity, SyncStatus};
+pub use incident::{
+    Incident, Location, LocationSource, NewIncident, Observation, Severity, SyncStatus,
+};
 pub use intelligence::{AccessStatus, IncidentAnalysis, IncidentCategory, RawAnalysis};
 pub use node::{NodeRecord, NodeStatus};
 pub use peer::{ConnectionState, Peer};
@@ -29,8 +31,17 @@ use chrono::{DateTime, Utc};
 /// would not compare equal to the same record read back. Truncating at
 /// creation makes the in-memory value and the stored value identical.
 pub fn now() -> DateTime<Utc> {
-    let millis = Utc::now().timestamp_millis();
-    DateTime::from_timestamp_millis(millis).unwrap_or_else(Utc::now)
+    to_storage_precision(Utc::now())
+}
+
+/// Drops any precision the storage layer would not keep.
+///
+/// [`now`] is not the only source of timestamps: a position's capture time
+/// comes from the platform's location stack or from a peer's payload, both of
+/// which can carry microseconds. Without this, such a value would compare equal
+/// to itself in memory and unequal after a round trip through the database.
+pub fn to_storage_precision(value: DateTime<Utc>) -> DateTime<Utc> {
+    DateTime::from_timestamp_millis(value.timestamp_millis()).unwrap_or(value)
 }
 
 #[cfg(test)]

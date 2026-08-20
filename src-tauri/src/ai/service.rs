@@ -20,6 +20,7 @@
 use crate::ai::dataset;
 use crate::ai::embedding::EmbeddingEngine;
 use crate::ai::engine::{EngineHealth, LocalInferenceEngine, StructuredRequest};
+use crate::ai::knowledge_pack;
 use crate::ai::prompt;
 use crate::ai::rag::{self, GroundedAnswer};
 use crate::ai::Unavailable;
@@ -59,6 +60,31 @@ pub struct IntelligenceStatus {
     pub documents_indexed: u64,
     pub chunks_indexed: u64,
     pub vectors_stored: u64,
+}
+
+/// What local knowledge this node holds.
+///
+/// Reported as counts of distinct things rather than one total, because the
+/// distinction is the point: standing guidance and live incident reports are
+/// different kinds of knowledge and an operator needs to see both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeBaseSummary {
+    /// Documents from the provisioned operational knowledge pack.
+    pub operational_documents: u64,
+    /// Any other imported document, including the synthetic evaluation corpus.
+    pub imported_documents: u64,
+    /// Incidents that hold a vector, and are therefore actually searchable.
+    pub live_incidents_indexed: u64,
+    /// Incidents this node holds, indexed or not. A gap between the two means
+    /// indexing is still catching up, which is normal and not an error.
+    pub live_incidents_total: u64,
+    pub chunks: u64,
+    pub vectors: u64,
+    /// How many documents the pack compiled into this binary contains.
+    pub pack_documents_available: usize,
+    /// True when every pack document is present in the index.
+    pub pack_installed: bool,
 }
 
 /// Outcome of an indexing pass.
@@ -276,6 +302,31 @@ impl IntelligenceService {
         self.database.list_documents()
     }
 
+    /// What this node holds locally, for the Knowledge Base panel.
+    ///
+    /// Reads only. Nothing here provisions, downloads or indexes — an operator
+    /// looking at the panel must not be causing work by looking.
+    pub fn knowledge_summary(&self) -> CoreResult<KnowledgeBaseSummary> {
+        let documents = self.database.list_documents()?;
+        let operational_documents = documents
+            .iter()
+            .filter(|document| document.source_type == knowledge_pack::SOURCE_TYPE)
+            .count() as u64;
+
+        Ok(KnowledgeBaseSummary {
+            operational_documents,
+            imported_documents: documents.len() as u64 - operational_documents,
+            live_incidents_indexed: self
+                .database
+                .count_embeddings_of_kind(EmbeddingKind::Incident)?,
+            live_incidents_total: self.database.count_incidents()?,
+            chunks: self.database.count_knowledge_chunks()?,
+            vectors: self.database.count_embeddings()?,
+            pack_documents_available: knowledge_pack::DOCUMENTS.len(),
+            pack_installed: operational_documents as usize >= knowledge_pack::DOCUMENTS.len(),
+        })
+    }
+
     /// Incidents that hold no vector for the embedding model in use.
     ///
     /// Derived from the absence of a stored vector rather than from a status
@@ -298,6 +349,56 @@ impl IntelligenceService {
             .into_iter()
             .map(|incident| incident.id)
             .collect())
+    }
+
+    /// Installs the operational knowledge pack compiled into this binary.
+    ///
+    /// Explicit, never automatic: nothing is provisioned at startup, so an
+    /// operator can always answer the question "where did this text come
+    /// from?" with "I installed it, from the binary".
+    ///
+    /// **Idempotent.** Each document is keyed by a SHA-256 of its normalised
+    /// text, so a second install adds no documents, no chunks and no vectors.
+    /// Re-running it is how an operator confirms the pack is present, which
+    /// means it must be safe to run.
+    ///
+    /// Embedding is not done here. Vectors are produced by
+    /// [`Self::index_pending`], which is the same path incidents take.
+    pub fn install_operational_knowledge(&self) -> CoreResult<knowledge_pack::InstallReport> {
+        let chunks_before = self.database.count_knowledge_chunks()?;
+        let mut report = knowledge_pack::InstallReport::default();
+
+        for document in knowledge_pack::DOCUMENTS {
+            let stored = self.ingest_document(
+                document.title,
+                document.source,
+                knowledge_pack::SOURCE_TYPE,
+                document.text,
+            )?;
+            match stored {
+                Some(_) => report.documents_installed += 1,
+                None => report.documents_already_present += 1,
+            }
+        }
+
+        report.chunks_created = self
+            .database
+            .count_knowledge_chunks()?
+            .saturating_sub(chunks_before);
+        Ok(report)
+    }
+
+    /// How much of the pack is already present.
+    ///
+    /// Read separately from installing it, so the UI can show the state without
+    /// writing anything.
+    pub fn operational_document_count(&self) -> CoreResult<usize> {
+        Ok(self
+            .database
+            .list_documents()?
+            .iter()
+            .filter(|document| document.source_type == knowledge_pack::SOURCE_TYPE)
+            .count())
     }
 
     /// Loads the synthetic evaluation corpus as knowledge documents.
@@ -509,6 +610,9 @@ mod tests {
             severity: "HIGH".to_string(),
             latitude: None,
             longitude: None,
+            accuracy_meters: None,
+            location_source: None,
+            location_captured_at: None,
         }
         .validate(&f.node_id)
         .unwrap();

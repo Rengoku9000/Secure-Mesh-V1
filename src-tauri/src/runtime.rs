@@ -367,6 +367,53 @@ impl NodeRuntime {
         }
     }
 
+    /// Installs the operational knowledge pack compiled into this binary.
+    ///
+    /// Requires intelligence, because a document with no way to embed it is not
+    /// knowledge this node can retrieve — installing into a node with no model
+    /// would report success and change nothing an operator could use.
+    pub fn install_operational_knowledge(
+        &self,
+    ) -> CoreResult<crate::ai::knowledge_pack::InstallReport> {
+        let report = self
+            .require_intelligence()?
+            .install_operational_knowledge()?;
+
+        audit(
+            AuditEvent::KnowledgeInstalled,
+            AuditOutcome::Success,
+            &format!(
+                "pack={} installed={} already_present={} chunks={}",
+                crate::ai::knowledge_pack::PACK_VERSION,
+                report.documents_installed,
+                report.documents_already_present,
+                report.chunks_created
+            ),
+        );
+
+        // Newly installed chunks hold no vectors yet. Embedding is derived work
+        // on the background indexer, exactly as it is for an incident, so a
+        // slow or failing model cannot leave the install half-applied.
+        self.request_indexing();
+        Ok(report)
+    }
+
+    /// What local knowledge this node holds.
+    ///
+    /// Returns an empty summary rather than an error when no model is present:
+    /// a node with no intelligence has no knowledge base, which is a state to
+    /// display, not a failure.
+    pub fn knowledge_summary(&self) -> CoreResult<crate::ai::KnowledgeBaseSummary> {
+        match &self.intelligence {
+            Some(service) => service.knowledge_summary(),
+            None => Ok(crate::ai::KnowledgeBaseSummary {
+                pack_documents_available: crate::ai::knowledge_pack::DOCUMENTS.len(),
+                live_incidents_total: self.database.count_incidents()?,
+                ..Default::default()
+            }),
+        }
+    }
+
     // --- Peer authorization (Phase 2.5) -----------------------------------
 
     /// The role this node's own operator holds.
@@ -506,6 +553,9 @@ impl NodeRuntime {
                     severity: incident.severity.as_str().to_string(),
                     latitude: incident.latitude,
                     longitude: incident.longitude,
+                    accuracy_meters: incident.accuracy_meters,
+                    location_source: incident.location_source,
+                    location_captured_at: incident.location_captured_at,
                 },
             )?;
             self.database
@@ -633,6 +683,9 @@ impl NodeRuntime {
                 severity: validated.severity.as_str().to_string(),
                 latitude: validated.latitude,
                 longitude: validated.longitude,
+                accuracy_meters: validated.accuracy_meters,
+                location_source: validated.location_source,
+                location_captured_at: validated.location_captured_at,
             },
         )?;
 
@@ -811,12 +864,45 @@ impl NodeRuntime {
                     ),
                 ),
             },
+            // Reports whether *geographic data* is installed, which is a
+            // different question from whether the network is reachable. The map
+            // is offline either way; without a basemap it draws a coordinate
+            // grid with real markers rather than nothing.
+            map: match crate::map::describe() {
+                Ok(basemap) => ComponentStatus::operational(
+                    "Ready",
+                    format!(
+                        "Offline geographic data available: {} feature(s) from {}.",
+                        basemap.feature_count, basemap.name
+                    ),
+                ),
+                // Absence is a normal state an operator resolves, not a fault.
+                Err(reason) if reason.is_absence() => ComponentStatus::inactive(
+                    "Not provisioned",
+                    "Map data has not been installed on this node. Incident and node                      positions are still shown on a coordinate grid."
+                        .to_string(),
+                ),
+                Err(reason) => ComponentStatus::degraded("Error", reason.detail()),
+            },
             tee: ComponentStatus::inactive(
                 "Not available",
                 "No trusted execution environment is in use. Keys are held in software."
                     .to_string(),
             ),
         }
+    }
+
+    /// The provisioned basemap description, or why there is none.
+    ///
+    /// Separate from [`Self::map_geojson`] so the dashboard can poll status
+    /// without pulling geometry across IPC.
+    pub fn map_basemap(&self) -> Option<crate::map::Basemap> {
+        crate::map::describe().ok()
+    }
+
+    /// The provisioned basemap geometry, for the renderer.
+    pub fn map_geojson(&self) -> CoreResult<String> {
+        crate::map::geojson()
     }
 
     /// Mesh connectivity as it actually stands.
@@ -922,6 +1008,9 @@ pub struct SystemStatus {
     pub network: ComponentStatus,
     pub ai: ComponentStatus,
     pub location: ComponentStatus,
+    /// Whether offline geographic data is installed. Unrelated to network
+    /// reachability — the map never uses the network either way.
+    pub map: ComponentStatus,
     pub tee: ComponentStatus,
 }
 
@@ -950,6 +1039,9 @@ mod tests {
             severity: severity.to_string(),
             latitude: None,
             longitude: None,
+            accuracy_meters: None,
+            location_source: None,
+            location_captured_at: None,
         }
     }
 

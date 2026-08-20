@@ -4,7 +4,7 @@
 //! SQLite only as bound parameters, never as SQL text.
 
 use super::{format_timestamp, parse_timestamp, Database};
-use crate::domain::{Incident, Observation, Severity, SyncStatus};
+use crate::domain::{Incident, LocationSource, Observation, Severity, SyncStatus};
 use crate::error::{CoreError, CoreResult};
 use crate::security::{audit, AuditEvent, AuditOutcome};
 use rusqlite::{params, Row};
@@ -17,6 +17,7 @@ pub const MAX_PAGE_SIZE: u32 = 500;
 pub const DEFAULT_PAGE_SIZE: u32 = 100;
 
 const SELECT_COLUMNS: &str = "id, created_by, description, severity, latitude, longitude, \
+                              accuracy_meters, location_source, location_captured_at, \
                               created_at, updated_at, sync_status";
 
 impl Database {
@@ -30,8 +31,9 @@ impl Database {
         let result = conn.execute(
             "INSERT INTO incidents (
                  id, created_by, description, severity, latitude, longitude,
+                 accuracy_meters, location_source, location_captured_at,
                  created_at, updated_at, sync_status
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 incident.id,
                 incident.created_by,
@@ -39,6 +41,13 @@ impl Database {
                 incident.severity.as_str(),
                 incident.latitude,
                 incident.longitude,
+                incident.accuracy_meters,
+                // Provenance is stored only alongside a position. Writing
+                // "UNKNOWN" against an incident that has no coordinates would
+                // create a row reading as a failed measurement rather than as
+                // no measurement attempted.
+                incident.latitude.map(|_| incident.location_source.as_str()),
+                incident.location_captured_at.map(format_timestamp),
                 format_timestamp(incident.created_at),
                 format_timestamp(incident.updated_at),
                 incident.sync_status.as_str(),
@@ -198,6 +207,9 @@ struct IncidentRow {
     severity: String,
     latitude: Option<f64>,
     longitude: Option<f64>,
+    accuracy_meters: Option<f64>,
+    location_source: Option<String>,
+    location_captured_at: Option<String>,
     created_at: String,
     updated_at: String,
     sync_status: String,
@@ -212,9 +224,12 @@ impl IncidentRow {
             severity: row.get(3)?,
             latitude: row.get(4)?,
             longitude: row.get(5)?,
-            created_at: row.get(6)?,
-            updated_at: row.get(7)?,
-            sync_status: row.get(8)?,
+            accuracy_meters: row.get(6)?,
+            location_source: row.get(7)?,
+            location_captured_at: row.get(8)?,
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
+            sync_status: row.get(11)?,
         })
     }
 
@@ -228,6 +243,22 @@ impl IncidentRow {
             })?,
             latitude: self.latitude,
             longitude: self.longitude,
+            accuracy_meters: self.accuracy_meters,
+            // A row written before migration 005 has no source at all, which is
+            // exactly what Unknown means. An unrecognised label is a different
+            // matter: it means this build cannot interpret the row, and
+            // guessing would misrepresent the record.
+            location_source: match self.location_source.as_deref() {
+                None => LocationSource::Unknown,
+                Some(label) => label.parse::<LocationSource>().map_err(|_| {
+                    CoreError::storage("database holds an unrecognised location source")
+                })?,
+            },
+            location_captured_at: self
+                .location_captured_at
+                .as_deref()
+                .map(|value| parse_timestamp("location_captured_at", value))
+                .transpose()?,
             created_at: parse_timestamp("created_at", &self.created_at)?,
             updated_at: parse_timestamp("updated_at", &self.updated_at)?,
             sync_status: self.sync_status.parse::<SyncStatus>()?,
@@ -260,6 +291,9 @@ mod tests {
             severity: severity.to_string(),
             latitude: None,
             longitude: None,
+            accuracy_meters: None,
+            location_source: None,
+            location_captured_at: None,
         }
         .validate(NODE)
         .unwrap()
@@ -391,6 +425,9 @@ mod tests {
             severity: "LOW".to_string(),
             latitude: None,
             longitude: None,
+            accuracy_meters: None,
+            location_source: None,
+            location_captured_at: None,
         }
         .validate("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
         .unwrap();

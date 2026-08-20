@@ -100,6 +100,12 @@ fn incident_at(description: &str, location: Option<&DeviceLocation>) -> NewIncid
         severity: "HIGH".to_string(),
         latitude: location.map(|l| l.latitude),
         longitude: location.map(|l| l.longitude),
+        // The capture path forwards everything the reading carried, not just
+        // the two numbers. Whatever the UI does, this is the shape the command
+        // layer receives.
+        accuracy_meters: location.and_then(|l| l.accuracy_meters),
+        location_source: location.map(|l| l.source.into()),
+        location_captured_at: location.map(|l| l.captured_at),
     }
 }
 

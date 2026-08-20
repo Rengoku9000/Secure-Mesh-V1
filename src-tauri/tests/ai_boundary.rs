@@ -128,6 +128,9 @@ fn incident(harness: &Harness, description: &str) -> String {
             severity: "HIGH".to_string(),
             latitude: None,
             longitude: None,
+            accuracy_meters: None,
+            location_source: None,
+            location_captured_at: None,
         })
         .unwrap()
         .id
@@ -425,6 +428,9 @@ fn no_intelligence_response_contains_private_key_material() {
             severity: "HIGH".to_string(),
             latitude: None,
             longitude: None,
+            accuracy_meters: None,
+            location_source: None,
+            location_captured_at: None,
         })
         .unwrap()
         .id;
@@ -466,6 +472,9 @@ fn a_node_without_intelligence_is_fully_functional() {
             severity: "CRITICAL".to_string(),
             latitude: None,
             longitude: None,
+            accuracy_meters: None,
+            location_source: None,
+            location_captured_at: None,
         })
         .unwrap();
 
@@ -543,6 +552,9 @@ fn a_failing_model_does_not_prevent_incident_creation_or_replication() {
                 severity: "HIGH".to_string(),
                 latitude: None,
                 longitude: None,
+                accuracy_meters: None,
+                location_source: None,
+                location_captured_at: None,
             })
             .unwrap();
     }
