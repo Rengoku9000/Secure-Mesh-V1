@@ -37,6 +37,7 @@ const SOURCE_NOTE: Record<IncidentLocationSource, string> = {
 interface IncidentDetailsDialogProps {
   incident: Incident;
   onClose: () => void;
+  onLocateOnMap?: (incident: Incident) => void;
 }
 
 /**
@@ -50,6 +51,7 @@ interface IncidentDetailsDialogProps {
 export function IncidentDetailsDialog({
   incident,
   onClose,
+  onLocateOnMap,
 }: IncidentDetailsDialogProps) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -83,8 +85,17 @@ export function IncidentDetailsDialog({
           <h2 className="dialog__title" id="incident-details-title">
             Incident detail
           </h2>
-          <button type="button" className="button button--ghost" onClick={onClose}>
-            Close
+          <button
+            type="button"
+            className="dialog__close-btn"
+            onClick={onClose}
+            aria-label="Close dialog"
+            title="Close (Esc)"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
         </header>
 
@@ -170,6 +181,25 @@ export function IncidentDetailsDialog({
                 <span className="field__hint">
                   {SOURCE_NOTE[incident.locationSource]}
                 </span>
+
+                {onLocateOnMap && (
+                  <div style={{ marginTop: "14px", display: "flex", justifyContent: "flex-end" }}>
+                    <button
+                      type="button"
+                      className="button button--primary button--compact"
+                      onClick={() => {
+                        onClose();
+                        onLocateOnMap(incident);
+                      }}
+                      title="Locate this incident on the live map"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
+                      </svg>
+                      <span>Locate on Live Map →</span>
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>

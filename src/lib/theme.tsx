@@ -20,13 +20,14 @@ import {
   type ReactNode,
 } from "react";
 
-export type ThemePreference = "system" | "light" | "dark";
+export type ThemePreference = "light" | "dark";
 
 const STORAGE_KEY = "securemesh.theme";
 
 interface ThemeContextValue {
   preference: ThemePreference;
   setPreference: (preference: ThemePreference) => void;
+  toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -34,26 +35,23 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 function readStoredPreference(): ThemePreference {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === "light" || stored === "dark" || stored === "system") {
+    if (stored === "light" || stored === "dark") {
       return stored;
     }
   } catch {
-    // Private-mode or restricted storage: fall back to following the OS.
+    // Private-mode or restricted storage.
   }
-  return "system";
+  if (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+    return "dark";
+  }
+  return "light";
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>(readStoredPreference);
 
   useEffect(() => {
-    const root = document.documentElement;
-    if (preference === "system") {
-      // Removing the attribute hands control back to prefers-color-scheme.
-      root.removeAttribute("data-theme");
-    } else {
-      root.setAttribute("data-theme", preference);
-    }
+    document.documentElement.setAttribute("data-theme", preference);
   }, [preference]);
 
   const setPreference = useCallback((next: ThemePreference) => {
@@ -65,9 +63,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const toggleTheme = useCallback(() => {
+    setPreferenceState((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      try {
+        localStorage.setItem(STORAGE_KEY, next);
+      } catch {}
+      return next;
+    });
+  }, []);
+
   const value = useMemo(
-    () => ({ preference, setPreference }),
-    [preference, setPreference],
+    () => ({ preference, setPreference, toggleTheme }),
+    [preference, setPreference, toggleTheme],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

@@ -1,5 +1,7 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
 /*
- * SecureMesh design tokens.
+ * SecureMesh design tokens — Lovable typography & Nordic Teal theme.
  *
  * Every colour in the application is defined here and nowhere else. Components
  * reference tokens only, never literal colour values, which is what keeps the
@@ -20,67 +22,79 @@
 :root {
   color-scheme: light;
 
-  /* Surfaces, from furthest back to closest to the reader. */
-  --bg-canvas: #eef1f5;
+  /* Surfaces: Warm, clean ivory canvas and elevated pure-white card surfaces */
+  --bg-canvas: #f4f5f8;
   --bg-surface: #ffffff;
   --bg-raised: #ffffff;
-  --bg-inset: #f4f6f9;
-  --bg-hover: #eaeef3;
+  --bg-inset: #f0f2f6;
+  --bg-hover: #f0fdfa;
 
-  /* Borders, increasing in prominence. */
-  --border-subtle: #e2e7ed;
-  --border-default: #cfd6df;
-  --border-strong: #a9b4c2;
+  /* Borders: Soft, subtle card separation */
+  --border-subtle: #edf0f4;
+  --border-default: #dce1e8;
+  --border-strong: #b4bfc9;
 
-  /* Text. */
-  --text-primary: #0d1520;
-  --text-secondary: #47546a;
-  --text-muted: #5f6c80;
+  /* Text: Lovable high-contrast Slate palette */
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
   --text-inverse: #ffffff;
 
-  /* Interactive accent. */
-  --accent: #0a5fc4;
-  --accent-hover: #084da0;
+  /* Soothing Nordic Ocean Teal Accent */
+  --accent: #0d9488;
+  --accent-hover: #0f766e;
   --accent-contrast: #ffffff;
-  --accent-soft: #e4eefb;
-  --focus-ring: #0a5fc4;
+  --accent-soft: #f0fdfa;
+  --accent-gradient: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+  --focus-ring: #0d9488;
 
-  /* Subsystem states. */
-  --state-ok: #10713d;
-  --state-ok-soft: #dff3e6;
-  --state-degraded: #8a5300;
-  --state-degraded-soft: #fdefd6;
-  --state-inactive: #5f6c80;
-  --state-inactive-soft: #eaeef3;
+  /* Subsystem states: vibrant live status green, transit amber, calm slate */
+  --state-ok: #00a86b;
+  --state-ok-soft: #e6f7f0;
+  --state-degraded: #f59e0b;
+  --state-degraded-soft: #fef3c7;
+  --state-inactive: #64748b;
+  --state-inactive-soft: #f1f5f9;
 
-  /* Incident severity: a tinted chip with high-contrast text. */
-  --sev-low-fg: #23506e;
-  --sev-low-bg: #e2eef7;
-  --sev-medium-fg: #7a4a00;
-  --sev-medium-bg: #fdeed3;
-  --sev-high-fg: #8c3410;
-  --sev-high-bg: #fbe4da;
-  --sev-critical-fg: #8f1023;
-  --sev-critical-bg: #fbdde2;
+  /* Incident severity: distinctive transit status badges */
+  --sev-low-fg: #0369a1;
+  --sev-low-bg: #e0f2fe;
+  --sev-medium-fg: #b45309;
+  --sev-medium-bg: #fef3c7;
+  --sev-high-fg: #c2410c;
+  --sev-high-bg: #ffedd5;
+  --sev-critical-fg: #e11d48;
+  --sev-critical-bg: #ffe4e6;
 
-  /* Danger, for validation messages. */
-  --danger-fg: #a3172c;
-  --danger-bg: #fbe1e5;
-  --danger-border: #f0bcc4;
+  /* Danger */
+  --danger-fg: #dc2626;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
 
-  /* Elevation. */
-  --shadow-sm: 0 1px 2px rgb(13 21 32 / 8%);
-  --shadow-md: 0 4px 16px rgb(13 21 32 / 10%);
-  --shadow-lg: 0 12px 40px rgb(13 21 32 / 18%);
+  /* Warm mobile drop shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 14px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 10px 25px -4px rgba(15, 23, 42, 0.12), 0 4px 10px -2px rgba(15, 23, 42, 0.06);
+  --shadow-accent: 0 4px 14px rgba(13, 148, 136, 0.25);
 
-  /* Geometry and type. */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  /* Geometry: Curved tactile card corners */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
   --radius-pill: 999px;
 
-  --font-sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
-  --font-mono: "Cascadia Mono", "SF Mono", "JetBrains Mono", Consolas, monospace;
+  /* Typography: Lovable typography stack (Inter & JetBrains Mono) */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, monospace;
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Typography tracking */
+  --tracking-tighter: -0.035em;
+  --tracking-tight: -0.025em;
+  --tracking-normal: -0.011em;
+  --tracking-wide: 0.045em;
+  --tracking-wider: 0.075em;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -91,110 +105,108 @@
   --space-7: 48px;
 }
 
-/*
- * The dark palette. Declared twice — once for the system preference and once
- * for the explicit toggle — because a single selector cannot express both
- * "system says dark" and "user chose dark" while still letting an explicit
- * light choice override the system.
- */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
 
-    --bg-canvas: #080c12;
-    --bg-surface: #111926;
-    --bg-raised: #182332;
-    --bg-inset: #0d151f;
-    --bg-hover: #1e2b3d;
+    --bg-canvas: #090e17;
+    --bg-surface: #111a28;
+    --bg-raised: #182336;
+    --bg-inset: #0c131f;
+    --bg-hover: rgba(45, 212, 191, 0.08);
 
-    --border-subtle: #1d2837;
-    --border-default: #2a3849;
-    --border-strong: #3d4d63;
+    --border-subtle: #1c2738;
+    --border-default: #28374d;
+    --border-strong: #3d4f6a;
 
-    --text-primary: #e9eff7;
-    --text-secondary: #a9b8cb;
-    --text-muted: #8695a8;
-    --text-inverse: #08111c;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --text-inverse: #0f172a;
 
-    --accent: #62a8ff;
-    --accent-hover: #8bc0ff;
-    --accent-contrast: #051426;
-    --accent-soft: #142639;
-    --focus-ring: #62a8ff;
+    --accent: #2dd4bf;
+    --accent-hover: #5eead4;
+    --accent-contrast: #042f2e;
+    --accent-soft: rgba(45, 212, 191, 0.12);
+    --accent-gradient: linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%);
+    --focus-ring: #2dd4bf;
 
-    --state-ok: #58d68d;
-    --state-ok-soft: #122c1f;
-    --state-degraded: #f0b64d;
-    --state-degraded-soft: #2e2312;
-    --state-inactive: #8695a8;
-    --state-inactive-soft: #1a2432;
+    --state-ok: #10b981;
+    --state-ok-soft: #064e3b;
+    --state-degraded: #fbbf24;
+    --state-degraded-soft: #451a03;
+    --state-inactive: #94a3b8;
+    --state-inactive-soft: #1e293b;
 
-    --sev-low-fg: #9ec8e8;
-    --sev-low-bg: #14293a;
-    --sev-medium-fg: #f2c078;
-    --sev-medium-bg: #2f2413;
-    --sev-high-fg: #f5a184;
-    --sev-high-bg: #341a12;
-    --sev-critical-fg: #f78ea0;
-    --sev-critical-bg: #34131c;
+    --sev-low-fg: #7dd3fc;
+    --sev-low-bg: #0c2d48;
+    --sev-medium-fg: #fde68a;
+    --sev-medium-bg: #452405;
+    --sev-high-fg: #fdba74;
+    --sev-high-bg: #4a1d08;
+    --sev-critical-fg: #fca5a5;
+    --sev-critical-bg: #4c1318;
 
-    --danger-fg: #f79aa8;
-    --danger-bg: #331520;
-    --danger-border: #56222f;
+    --danger-fg: #f87171;
+    --danger-bg: #450a0a;
+    --danger-border: #7f1d1d;
 
-    --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
-    --shadow-md: 0 4px 16px rgb(0 0 0 / 45%);
-    --shadow-lg: 0 12px 40px rgb(0 0 0 / 55%);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.55);
+    --shadow-accent: 0 4px 16px rgba(45, 212, 191, 0.22);
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg-canvas: #080c12;
-  --bg-surface: #111926;
-  --bg-raised: #182332;
-  --bg-inset: #0d151f;
-  --bg-hover: #1e2b3d;
+  --bg-canvas: #090e17;
+  --bg-surface: #111a28;
+  --bg-raised: #182336;
+  --bg-inset: #0c131f;
+  --bg-hover: rgba(45, 212, 191, 0.08);
 
-  --border-subtle: #1d2837;
-  --border-default: #2a3849;
-  --border-strong: #3d4d63;
+  --border-subtle: #1c2738;
+  --border-default: #28374d;
+  --border-strong: #3d4f6a;
 
-  --text-primary: #e9eff7;
-  --text-secondary: #a9b8cb;
-  --text-muted: #8695a8;
-  --text-inverse: #08111c;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-inverse: #090e17;
 
-  --accent: #62a8ff;
-  --accent-hover: #8bc0ff;
-  --accent-contrast: #051426;
-  --accent-soft: #142639;
-  --focus-ring: #62a8ff;
+  --accent: #2dd4bf;
+  --accent-hover: #5eead4;
+  --accent-contrast: #042f2e;
+  --accent-soft: rgba(45, 212, 191, 0.12);
+  --accent-gradient: linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%);
+  --focus-ring: #2dd4bf;
 
-  --state-ok: #58d68d;
-  --state-ok-soft: #122c1f;
-  --state-degraded: #f0b64d;
-  --state-degraded-soft: #2e2312;
-  --state-inactive: #8695a8;
-  --state-inactive-soft: #1a2432;
+  --state-ok: #10b981;
+  --state-ok-soft: #064e3b;
+  --state-degraded: #fbbf24;
+  --state-degraded-soft: #451a03;
+  --state-inactive: #94a3b8;
+  --state-inactive-soft: #1e293b;
 
-  --sev-low-fg: #9ec8e8;
-  --sev-low-bg: #14293a;
-  --sev-medium-fg: #f2c078;
-  --sev-medium-bg: #2f2413;
-  --sev-high-fg: #f5a184;
-  --sev-high-bg: #341a12;
-  --sev-critical-fg: #f78ea0;
-  --sev-critical-bg: #34131c;
+  --sev-low-fg: #7dd3fc;
+  --sev-low-bg: #0c2d48;
+  --sev-medium-fg: #fde68a;
+  --sev-medium-bg: #452405;
+  --sev-high-fg: #fdba74;
+  --sev-high-bg: #4a1d08;
+  --sev-critical-fg: #fca5a5;
+  --sev-critical-bg: #4c1318;
 
-  --danger-fg: #f79aa8;
-  --danger-bg: #331520;
-  --danger-border: #56222f;
+  --danger-fg: #f87171;
+  --danger-bg: #450a0a;
+  --danger-border: #7f1d1d;
 
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
-  --shadow-md: 0 4px 16px rgb(0 0 0 / 45%);
-  --shadow-lg: 0 12px 40px rgb(0 0 0 / 55%);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.55);
+  --shadow-accent: 0 4px 16px rgba(45, 212, 191, 0.22);
 }
 
 /*
@@ -226,19 +238,22 @@
   /* The right operations rail. */
   --rail-w: clamp(280px, 22vw, 360px);
 
-  /* The tactical map is the primary operational surface, so its height tracks
-     the viewport rather than being capped at a fixed 460px. */
-  --surface-map-height: clamp(300px, 52vh, 900px);
+  /* The tactical map is bounded to keep the interface balanced and allow room for situational cards. */
+  --surface-map-height: clamp(340px, 48vh, 480px);
 
   /* Panels are flatter here than general-purpose card UI: an operations
      console reads as one instrument, not a tray of floating cards. */
   --radius-panel: var(--radius-md);
 
-  /* Minimum hit areas. Raised from 26-34px so trust actions and map controls
-     are usable with a trackpad or a touchscreen in the field. */
-  --hit: 38px;
-  --hit-compact: 32px;
-  --hit-map: 40px;
+  /* Minimum hit areas. Tuned for capacitive touchscreens (Raspberry Pi touch display, tablets, phones). */
+  --hit: 42px;
+  --hit-compact: 36px;
+  --hit-map: 44px;
+  --hit-touch: 48px;
+
+  /* Mobile bottom navigation bar height */
+  --bottom-nav-height: 60px;
+  --header-height: 52px;
 
   /* Type. Fixed rather than fluid: operational numerals and IDs must not
      resize under the reader between one monitor and the next. Small screens
@@ -257,7 +272,7 @@
     --gap-zone: clamp(10px, 1vw, 16px);
     --gap-panel: clamp(8px, 0.9vw, 14px);
     --pad-panel: clamp(10px, 1vw, 16px);
-    --surface-map-height: clamp(260px, 42vh, 520px);
+    --surface-map-height: clamp(260px, 38vh, 340px);
     --fs-body: 12.5px;
     --fs-value: 14px;
   }
