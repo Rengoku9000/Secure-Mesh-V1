@@ -46,7 +46,7 @@ export function SystemStatusPanel({ status }: SystemStatusPanelProps) {
       <Panel title="System status">
         <div className="status-list" aria-busy="true">
           {ROWS.map((row) => (
-            <div key={row.key} className="skeleton" style={{ height: 36 }} />
+            <div key={row.key} className="skeleton skeleton--stat" />
           ))}
         </div>
       </Panel>

@@ -164,88 +164,111 @@ export function DashboardPage() {
       <main className="app-main">
         {error && <Alert title="Core unavailable" message={error} />}
 
-        <div className="offline-banner">
-          <span className="offline-banner__marker">Offline-first</span>
-          <span>
-            {network?.detail ??
-              "All records are stored locally on this node and require no network connection."}
-          </span>
-        </div>
+        {/*
+          Operations layout. The primary column carries the map and the
+          incident timeline; the rail carries peer, network and node state.
+          Below 1280px the rail moves beneath the primary column rather than
+          competing with it for width — see `.ops-layout` in app.css.
 
-        {/* Full width, above the grid. The map is the fastest way to read
-            where things are, and it shares the dashboard's single selection
-            state with the timeline below rather than keeping its own. */}
-        <div className="dashboard-map">
-          <TacticalMap
-            incidents={incidents}
-            peers={peers}
-            peerLocations={peerLocations}
-            identity={identity}
-            indexStates={indexStates}
-            status={systemStatus?.map}
-            selected={selected}
-            onSelect={setSelected}
-            onOpenDetails={(incident) => {
-              setSelected(incident);
-              setDetailsOpen(true);
-            }}
-          />
-        </div>
+          This is a nesting change only. Every child receives exactly the props
+          it did before, and no handler, state value or IPC call is altered.
+        */}
+        <div className="ops-layout">
+          <div className="ops-primary">
+            {/* The map is the fastest way to read where things are, and it
+                shares the dashboard's single selection state with the timeline
+                below rather than keeping its own. */}
+            <div className="dashboard-map">
+              <TacticalMap
+                incidents={incidents}
+                peers={peers}
+                peerLocations={peerLocations}
+                identity={identity}
+                indexStates={indexStates}
+                status={systemStatus?.map}
+                selected={selected}
+                onSelect={setSelected}
+                onOpenDetails={(incident) => {
+                  setSelected(incident);
+                  setDetailsOpen(true);
+                }}
+              />
+            </div>
 
-        <div className="dashboard-grid">
-          <Panel
-            title="Recent incidents"
-            subtitle={
-              incidents.length === 0
-                ? "Stored locally on this node"
-                : `${incidents.length} record(s) · ${pendingCount} awaiting sync`
-            }
-            flush
-            actions={
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={() => setDialogOpen(true)}
-              >
-                Create incident
-              </button>
-            }
-          >
-            <IncidentTable
-            incidents={incidents}
-            loading={loading}
-            indexStates={indexStates}
-            onSelect={(incident) => {
-              setSelected(incident);
-              setDetailsOpen(true);
-            }}
-          />
-          </Panel>
+            <Panel
+              title="Recent incidents"
+              subtitle={
+                incidents.length === 0
+                  ? "Stored locally on this node"
+                  : `${incidents.length} record(s) · ${pendingCount} awaiting sync`
+              }
+              flush
+              actions={
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={() => setDialogOpen(true)}
+                >
+                  Create incident
+                </button>
+              }
+            >
+              <IncidentTable
+                incidents={incidents}
+                loading={loading}
+                indexStates={indexStates}
+                onSelect={(incident) => {
+                  setSelected(incident);
+                  setDetailsOpen(true);
+                }}
+              />
+            </Panel>
+          </div>
 
-          <AskSecureMesh status={intelligence} />
-
-          <div style={{ display: "grid", gap: "var(--space-5)" }}>
+          {/* Operational state: who we can reach, whether the subsystems are
+              healthy, and which node this is. Priorities 2-4, so they sit
+              beside the map rather than below the timeline. */}
+          <aside className="ops-rail" aria-label="Node and network status">
             <PeerPanel
               peers={peers}
               network={network}
               authority={authority}
               onChanged={() => void refresh()}
             />
-            <IntelligencePanel status={intelligence} />
-            <KnowledgeBasePanel
-              status={intelligence}
-              onChanged={() => void refresh()}
-            />
             <SystemStatusPanel status={systemStatus} />
             <NodeIdentityPanel identity={identity} />
-          </div>
+          </aside>
         </div>
+
+        {/* Supporting capability, deliberately last. With no model provisioned
+            these panels report themselves unavailable and the console above is
+            unaffected. */}
+        <section className="ops-secondary" aria-label="Local intelligence">
+          <AskSecureMesh status={intelligence} />
+          <IntelligencePanel status={intelligence} />
+          <KnowledgeBasePanel
+            status={intelligence}
+            onChanged={() => void refresh()}
+          />
+        </section>
       </main>
 
       <footer className="app-footer">
-        SecureMesh Phase 2 · Peer-to-peer over encrypted QUIC, discovered
-        locally. No cloud services, no server. Local AI and TEE are not yet
-        implemented.
+        <span className="app-footer__item">
+          <span className="app-footer__label">Storage</span>
+          <span>Local SQLite on this node</span>
+        </span>
+        <span className="app-footer__item">
+          <span className="app-footer__label">Transport</span>
+          <span>libp2p QUIC, TLS 1.3 · mDNS discovery on the local link</span>
+        </span>
+        <span className="app-footer__item">
+          <span className="app-footer__label">Network</span>
+          <span>
+            {network?.detail ??
+              "All records are stored locally and require no network connection."}
+          </span>
+        </span>
       </footer>
 
       {dialogOpen && (

@@ -79,8 +79,7 @@ export function AskSecureMesh({ status }: AskSecureMeshProps) {
           </label>
           <textarea
             id="ask-question"
-            className="textarea"
-            style={{ minHeight: 64 }}
+            className="textarea textarea--compact"
             value={question}
             maxLength={1000}
             disabled={!ready || asking}

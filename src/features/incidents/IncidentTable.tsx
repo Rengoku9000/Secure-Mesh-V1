@@ -52,9 +52,9 @@ export function IncidentTable({
   const showIndexColumn = indexStates.length > 0;
   if (loading) {
     return (
-      <div style={{ padding: "16px 20px", display: "grid", gap: 8 }} aria-busy="true">
+      <div className="loading-stack" aria-busy="true">
         {[0, 1, 2].map((row) => (
-          <div key={row} className="skeleton" style={{ height: 28 }} />
+          <div key={row} className="skeleton skeleton--row" />
         ))}
       </div>
     );

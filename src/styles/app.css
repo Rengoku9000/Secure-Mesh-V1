@@ -57,32 +57,118 @@ body {
 .app-main {
   flex: 1;
   width: 100%;
-  max-width: 1180px;
+  max-width: var(--shell-max);
   margin: 0 auto;
-  padding: var(--space-5) var(--space-5) var(--space-7);
+  padding: var(--gap-zone) var(--shell-pad) var(--space-6);
   display: grid;
-  gap: var(--space-5);
+  gap: var(--gap-zone);
+  /* A grid child defaults to min-content width, which lets a wide table push
+     the whole page sideways. This is what keeps the shell from ever scrolling
+     horizontally. */
+  min-width: 0;
 }
 
+/* Factual status line rather than prose: what this node stores, how it talks,
+   and what the core currently reports. */
 .app-footer {
   border-top: 1px solid var(--border-subtle);
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) var(--shell-pad);
   color: var(--text-muted);
-  font-size: 12px;
-  text-align: center;
+  font-size: var(--fs-meta);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2) var(--space-5);
 }
 
-/* Status panel beside the incident feed on wide screens, stacked on narrow. */
-.dashboard-grid {
+.app-footer__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.app-footer__label {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* --- Operations layout ---------------------------------------------------
+ *
+ *   < 960px    one column, everything stacked, denser spacing
+ *   960-1279   still one column for map + incidents, so neither is squeezed;
+ *              rail and secondary panels go two-up beneath. This band was
+ *              previously forced into two columns where neither fitted.
+ *   >= 1280px  command centre: primary work area + persistent right rail
+ *   >= 1600px  the rail widens and secondary panels spread, via token clamps
+ */
+.ops-layout {
   display: grid;
-  gap: var(--space-5);
+  gap: var(--gap-zone);
   grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+/* Map and incident timeline. The operator's primary surface. */
+.ops-primary {
+  display: grid;
+  gap: var(--gap-zone);
+  min-width: 0;
+  align-content: start;
+}
+
+/* Peers, system health, node identity. Operational state, always adjacent to
+   the map on a wide display rather than below the fold. */
+.ops-rail {
+  display: grid;
+  gap: var(--gap-zone);
+  min-width: 0;
+  align-content: start;
+}
+
+/* Intelligence, knowledge base, Ask. Supporting capability, placed last so the
+   console still reads correctly when no model is provisioned. */
+.ops-secondary {
+  display: grid;
+  gap: var(--gap-zone);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
 }
 
 @media (min-width: 960px) {
-  .dashboard-grid {
-    grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
-    align-items: start;
+  .ops-rail,
+  .ops-secondary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .ops-layout {
+    grid-template-columns: minmax(0, 1fr) var(--rail-w);
+  }
+
+  .ops-rail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ops-secondary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/*
+ * Beyond 1600px `--rail-w` has already reached its 360px ceiling, so every
+ * further pixel goes to the map and the timeline — which is the intent. What
+ * still needs bounding is prose: an answer or a description should not run the
+ * full width of a control-room monitor.
+ */
+@media (min-width: 1600px) {
+  .ops-secondary .panel__body {
+    max-width: 80ch;
   }
 }
 
@@ -96,45 +182,64 @@ body {
 
 .node-header__inner {
   width: 100%;
-  max-width: 1180px;
+  max-width: var(--shell-max);
   margin: 0 auto;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) var(--shell-pad);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-5);
+  gap: var(--gap-panel) var(--gap-zone);
 }
 
 .node-header__brand {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   margin-right: auto;
+  min-width: 0;
 }
 
-.node-header__title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 650;
-  letter-spacing: 0.14em;
+/*
+ * The product name is a small caption, not a wordmark. What the operator needs
+ * from this corner is *which node am I looking at* — so the node name is the
+ * larger, higher-contrast line and the brand sits above it as context.
+ */
+.node-header__mark {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  color: var(--text-muted);
 }
 
-.node-header__tagline {
-  color: var(--text-muted);
-  font-size: 12px;
+.node-header__node {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-value);
+  font-weight: 650;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-header__readouts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-panel) var(--gap-zone);
 }
 
 .node-stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 88px;
+  gap: 1px;
+  min-width: 72px;
 }
 
 .node-stat__label {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-weight: 600;
   letter-spacing: 0.11em;
   text-transform: uppercase;
@@ -142,7 +247,7 @@ body {
 
 .node-stat__value {
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: var(--fs-value);
   font-weight: 600;
   color: var(--text-primary);
   display: flex;
@@ -150,14 +255,64 @@ body {
   gap: var(--space-2);
 }
 
+/* "connected / known" — the denominator is context, not a headline number. */
+.node-stat__of {
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/*
+ * Offline-first, stated compactly in the header instead of as a full-width
+ * strip above the map. The claim is the same; it no longer costs a band of
+ * vertical space on a 720px-tall display.
+ */
+.header-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px var(--space-3);
+  min-height: var(--hit-compact);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.header-chip__glyph {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+@media (max-width: 700px) {
+  .node-header__readouts {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .header-chip {
+    order: 10;
+  }
+}
+
 /* --- Panels ------------------------------------------------------------- */
 
+/*
+ * Panels read as instrument bays, not floating cards: a hairline border, a
+ * tighter radius and no drop shadow. Elevation is reserved for things that
+ * genuinely float — dialogs and the map popup.
+ */
 .panel {
   background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-panel);
   overflow: hidden;
+  min-width: 0;
 }
 
 .panel__header {
@@ -165,8 +320,10 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) var(--pad-panel);
   border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+  flex-wrap: wrap;
 }
 
 .panel__heading {
@@ -190,7 +347,7 @@ body {
 }
 
 .panel__body {
-  padding: var(--space-4) var(--space-5) var(--space-5);
+  padding: var(--pad-panel);
 }
 
 .panel__body--flush {
@@ -420,6 +577,28 @@ body {
   animation: pulse 1.6s ease-in-out infinite;
 }
 
+/* Loading placeholder heights, previously written as inline `style` on every
+   skeleton. Named here so the shapes stay consistent across panels. */
+.skeleton--row {
+  height: 28px;
+}
+
+.skeleton--line {
+  height: 32px;
+}
+
+.skeleton--stat {
+  height: 36px;
+}
+
+/* A skeleton stack inside a flush panel, which has no padding of its own. */
+.loading-stack {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--pad-panel);
+}
+
+
 @keyframes pulse {
   0%,
   100% {
@@ -467,8 +646,8 @@ body {
   justify-content: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
-  min-height: 34px;
-  border-radius: var(--radius-md);
+  min-height: var(--hit);
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
   font-family: inherit;
   font-size: 13px;
@@ -505,8 +684,8 @@ body {
   background: transparent;
   color: var(--text-secondary);
   border-color: transparent;
-  padding: var(--space-1) var(--space-2);
-  min-height: 28px;
+  padding: var(--space-1) var(--space-3);
+  min-height: var(--hit-compact);
 }
 
 .button--ghost:hover:not(:disabled) {
@@ -600,6 +779,12 @@ body {
   min-height: 96px;
   resize: vertical;
   line-height: 1.55;
+}
+
+/* The Ask field sits in a narrow rail panel, so it starts shorter and grows by
+   drag. Was an inline `minHeight: 64`. */
+.textarea--compact {
+  min-height: 64px;
 }
 
 .select {
@@ -741,9 +926,11 @@ body {
   color: var(--accent);
 }
 
+/* Approve and Reject use this. They were the smallest targets in the whole
+   interface at 26px; a trust decision should not need a precise click. */
 .button--compact {
-  min-height: 26px;
-  padding: 2px var(--space-3);
+  min-height: var(--hit-compact);
+  padding: var(--space-1) var(--space-3);
   font-size: 12px;
 }
 
@@ -1023,27 +1210,6 @@ body {
 
 /* --- Misc --------------------------------------------------------------- */
 
-.offline-banner {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-default);
-  background: var(--bg-inset);
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-
-.offline-banner__marker {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-
 .mono {
   font-family: var(--font-mono);
 }
@@ -1243,11 +1409,12 @@ body {
 
 /* --- Tactical map -------------------------------------------------------- */
 
-/* The surface is height-capped rather than free-growing: the map must not push
-   the incident timeline below the fold on a small screen. */
+/* The surface tracks the viewport rather than a fixed cap. Its height token
+   clamps so the map still cannot push the incident timeline off a 720px-tall
+   screen, while on a control-room monitor it grows past the old 460px stop. */
 .map {
   position: relative;
-  height: clamp(280px, 42vh, 460px);
+  height: var(--surface-map-height);
   overflow: hidden;
   background: var(--bg-inset);
   border-bottom: 1px solid var(--border-subtle);
@@ -1413,8 +1580,8 @@ body {
 }
 
 .map__zoom button {
-  width: 30px;
-  height: 30px;
+  width: var(--hit-map);
+  height: var(--hit-map);
   font-size: 16px;
   line-height: 1;
   color: var(--text-primary);
@@ -1530,8 +1697,10 @@ body {
   padding: var(--space-3) var(--space-5);
 }
 
+/* Spacing comes from the operations grid's gap, so the map carries none of its
+   own. */
 .dashboard-map {
-  margin-bottom: var(--space-5);
+  min-width: 0;
 }
 
 /* --- Map: incident card, anchored at its marker -------------------------- */
