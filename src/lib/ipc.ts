@@ -33,6 +33,7 @@ import type {
   InstallReport,
   KnowledgeBaseSummary,
   Basemap,
+  PeerLocationView,
 } from "../types/core";
 
 /**
@@ -251,6 +252,16 @@ export function getCurrentLocation(): Promise<DeviceLocation> {
 /** Documents in the local knowledge base. */
 export function getKnowledgeDocuments(): Promise<KnowledgeDocument[]> {
   return call<KnowledgeDocument[]>("get_knowledge_documents");
+}
+
+/**
+ * Positions authorized peers have reported over the mesh.
+ *
+ * Read-only and cheap — it returns what the core already holds in memory.
+ * Reading it takes no fix, contacts no peer, and writes nothing.
+ */
+export function getPeerLocations(): Promise<PeerLocationView[]> {
+  return call<PeerLocationView[]>("get_peer_locations");
 }
 
 /**

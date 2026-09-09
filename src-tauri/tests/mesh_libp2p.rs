@@ -358,3 +358,94 @@ fn a_node_with_no_peers_starts_and_operates_normally() {
         "online must mean at least one authenticated peer"
     );
 }
+
+/// A location heartbeat over the real transport.
+///
+/// The in-process tests drive the receive path directly. This one runs the
+/// **production publish path** — take a real fix, sign it, broadcast it to
+/// authorized peers — across an actual QUIC session between two nodes that
+/// found each other over mDNS. A serialisation or authorization mistake would
+/// show up here and nowhere else.
+///
+/// Skips when the machine has no location provider, which is the normal state
+/// in CI. The skip is printed rather than silent: a run that proved nothing
+/// should say so.
+#[test]
+fn a_location_heartbeat_crosses_a_real_quic_session() {
+    use securemesh_lib::domain::LocationFreshness;
+
+    let a = spawn();
+    let b = spawn();
+
+    // Waits for *each other*, by node ID. This machine may have other nodes
+    // on the same mDNS segment, so a non-empty peer list is not proof that the
+    // two under test have met.
+    wait_until(&[&a, &b], "the two nodes to discover each other", || {
+        a.runtime
+            .connected_peers()
+            .iter()
+            .any(|peer| peer.node_id == b.node_id)
+            && b.runtime
+                .connected_peers()
+                .iter()
+                .any(|peer| peer.node_id == a.node_id)
+    });
+
+    a.runtime.approve_peer(&b.node_id, None).unwrap();
+    b.runtime.approve_peer(&a.node_id, None).unwrap();
+    idle_for(&[&a, &b], Duration::from_millis(500));
+
+    // The real path: provider, signature, broadcast.
+    let Some(sequence) = a.runtime.publish_location().unwrap() else {
+        println!("SKIPPED - this machine has no location provider");
+        return;
+    };
+    assert_eq!(sequence, 1, "the first publication is sequence 1");
+
+    wait_until(&[&a, &b], "B to receive A's position", || {
+        b.runtime
+            .peer_locations()
+            .iter()
+            .any(|held| held.location.node_id == a.node_id)
+    });
+
+    // Found by node ID rather than by index: other nodes may share this
+    // machine's mDNS segment, and the assertion is about A's position.
+    let held = b.runtime.peer_locations();
+    let entry = held
+        .iter()
+        .find(|held| held.location.node_id == a.node_id)
+        .expect("A's position");
+
+    let position = &entry.location;
+    assert_eq!(position.sequence, 1);
+    assert!(position.latitude.is_finite() && position.longitude.is_finite());
+    assert_eq!(entry.freshness, LocationFreshness::Current);
+
+    // Receipt is separate from capture, and cannot precede it.
+    assert!(position.received_at >= position.captured_at);
+
+    // A second publication advances the sequence and replaces, not accumulates.
+    if let Some(next) = a.runtime.publish_location().unwrap() {
+        assert_eq!(next, 2);
+        wait_until(&[&a, &b], "the second position to arrive", || {
+            b.runtime
+                .peer_locations()
+                .iter()
+                .any(|held| held.location.node_id == a.node_id && held.location.sequence == 2)
+        });
+        assert_eq!(
+            b.runtime
+                .peer_locations()
+                .iter()
+                .filter(|held| held.location.node_id == a.node_id)
+                .count(),
+            1,
+            "one entry per peer, replaced rather than accumulated"
+        );
+    }
+
+    // None of it touched the replicated log.
+    assert_eq!(b.runtime.database().count_events().unwrap(), 0);
+    assert!(b.runtime.list_incidents(None).unwrap().is_empty());
+}

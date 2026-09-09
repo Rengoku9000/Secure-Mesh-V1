@@ -49,6 +49,15 @@ pub enum AuditEvent {
     /// Audited because it changes what the node will answer questions from, and
     /// "where did this text come from?" must be answerable after the fact.
     KnowledgeInstalled,
+    /// A peer reported a position for the first time, or after its previous
+    /// one had expired.
+    ///
+    /// Only the transition is recorded. A heartbeat every five minutes is an
+    /// observation, not a security decision, and logging each one would bury
+    /// every real event under thousands of routine lines.
+    PeerLocationAvailable,
+    /// A peer's reported position aged past the point of being usable.
+    PeerLocationExpired,
 }
 
 impl AuditEvent {
@@ -61,6 +70,8 @@ impl AuditEvent {
             AuditEvent::PeerTrustChanged => "peer.trust_changed",
             AuditEvent::AuthorizationDenied => "authorization.denied",
             AuditEvent::KnowledgeInstalled => "knowledge.installed",
+            AuditEvent::PeerLocationAvailable => "peer.location_available",
+            AuditEvent::PeerLocationExpired => "peer.location_expired",
         }
     }
 }

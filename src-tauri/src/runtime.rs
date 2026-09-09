@@ -68,6 +68,14 @@ pub struct NodeRuntime {
     /// The mesh, when one is attached. `None` means this node runs standalone,
     /// which is a fully supported mode rather than a failure.
     mesh: Option<Mutex<SyncEngine<Box<dyn MeshTransport>>>>,
+    /// This node's own monotonic location counter.
+    ///
+    /// Increments only after a position is successfully obtained, so a failed
+    /// fix leaves no gap and a peer never sees a sequence that stood for
+    /// nothing. In memory: it orders the heartbeats of one process lifetime,
+    /// and a restart re-announces from 1 against a peer that has no record of
+    /// the previous run either.
+    location_sequence: std::sync::atomic::AtomicU64,
     /// Where device positions come from.
     ///
     /// Always present, because "this machine cannot report a position" is itself
@@ -122,6 +130,7 @@ impl NodeRuntime {
             database,
             local_append: Mutex::new(()),
             mesh: transport.map(|t| Mutex::new(SyncEngine::new(t))),
+            location_sequence: std::sync::atomic::AtomicU64::new(0),
             intelligence: None,
             indexer: None,
             location: crate::location::platform_provider(),
@@ -134,6 +143,69 @@ impl NodeRuntime {
     ///
     /// Returns an empty report for a standalone node, so callers need no
     /// special case for running without a network.
+    /// Takes a position and publishes it to authorized peers.
+    ///
+    /// **Blocking**: the platform location service can take seconds to answer,
+    /// which is why the caller runs this on its own thread rather than on the
+    /// sync pump. A slow fix must not stall replication.
+    ///
+    /// Returns the sequence published, or `None` when no position was
+    /// available. Nothing is invented on failure and the sequence does not
+    /// advance — a counter that moved without a position would tell peers a
+    /// heartbeat had been missed rather than never made.
+    pub fn publish_location(&self) -> CoreResult<Option<u64>> {
+        let Some(mesh) = &self.mesh else {
+            return Ok(None);
+        };
+
+        // The existing provider, asked exactly as the UI asks it. A failure is
+        // reported, never substituted.
+        let fix = match self.current_location() {
+            Ok(fix) => fix,
+            Err(_) => return Ok(None),
+        };
+
+        let sequence = self
+            .location_sequence
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
+
+        let reading = crate::domain::LocationReport {
+            latitude: fix.latitude,
+            longitude: fix.longitude,
+            accuracy_meters: fix.accuracy_meters,
+            // The record's vocabulary, mapped once in the location module. A
+            // wireless fix stays wireless.
+            source: fix.source.into(),
+            captured_at: fix.captured_at,
+            sequence,
+        }
+        .validated()?;
+
+        let mut engine = mesh.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        engine.broadcast_location(&self.database, &self.identity, reading)?;
+
+        Ok(Some(sequence))
+    }
+
+    /// The highest location sequence this node has published.
+    pub fn location_sequence(&self) -> u64 {
+        self.location_sequence
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Positions peers have reported, with freshness judged now.
+    ///
+    /// Empty on a node with no mesh. Read-only: nothing here is persisted, and
+    /// reading it neither takes a fix nor contacts a peer.
+    pub fn peer_locations(&self) -> Vec<crate::domain::PeerLocationView> {
+        let Some(mesh) = &self.mesh else {
+            return Vec::new();
+        };
+        let engine = mesh.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        engine.peer_locations(crate::domain::now())
+    }
+
     pub fn sync_tick(&self) -> CoreResult<SyncReport> {
         let Some(mesh) = &self.mesh else {
             return Ok(SyncReport::default());
@@ -475,6 +547,16 @@ impl NodeRuntime {
     pub fn revoke_peer(&self, node_id: &str, note: Option<&str>) -> CoreResult<TrustState> {
         self.require_local_capability(Capability::PeerRevoke)?;
         let state = self.database.revoke_peer(&self.identity, node_id, note)?;
+
+        // A revoked peer's claim about where it is should not linger on the
+        // map after the operator has said it is no longer trusted. The
+        // position was only ever held on that peer's authority.
+        if let Some(mesh) = &self.mesh {
+            mesh.lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .forget_peer_location(node_id);
+        }
+
         self.notify_authorization_changed(node_id);
         Ok(state)
     }

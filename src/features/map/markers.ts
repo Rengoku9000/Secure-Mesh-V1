@@ -15,6 +15,8 @@
 
 import type {
   Incident,
+  LocationFreshness,
+  PeerLocationView,
   IncidentLocationSource,
   LocationSource as DeviceLocationSource,
   Peer,
@@ -45,25 +47,28 @@ export interface NodeMarker {
 /**
  * A peer node placed on the map.
  *
- * No peer marker can be produced today, and that is deliberate rather than
- * unfinished: `Peer` carries identity, trust, reachability and replication
- * state, and nothing anywhere in SecureMesh records where a peer *is*.
+ * Drawn only from a position the peer itself reported over the authenticated
+ * mesh. Nothing is inferred from an IP address, a transport peer ID, mDNS, or
+ * network topology — those say where a packet came from, not where a node is.
  *
- * The tempting shortcut — placing a peer at the coordinates of an incident it
- * authored — is wrong. That is where the peer was when it filed a report, which
- * may be hours old and kilometres away, and drawing it as the peer's position
- * would state something SecureMesh does not know. The incident is shown at
- * those coordinates because the incident is what happened there.
- *
- * The type and the layer exist so that the day a peer position becomes
- * authoritative, only the source of this array changes.
+ * An incident's coordinates are still never used to place its author. That is
+ * where the peer was when it filed a report, possibly hours ago and kilometres
+ * away; the incident is shown there because the incident is what happened
+ * there.
  */
 export interface PeerMarker {
   nodeId: string;
   nodeName: string;
   position: GeoPoint;
-  /** When the position was recorded, so staleness is visible. */
-  recordedAt: string;
+  accuracyMeters: number | null;
+  source: IncidentLocationSource;
+  freshness: LocationFreshness;
+  /** When the peer measured it. */
+  capturedAt: string;
+  /** When this node received it. */
+  receivedAt: string;
+  ageSeconds: number;
+  sequence: number;
 }
 
 /** Which theme token paints a severity. Never a second severity scale. */
@@ -124,13 +129,61 @@ export function incidentMarkers(incidents: Incident[]): IncidentMarker[] {
 /**
  * Markers for peers whose position SecureMesh holds authoritatively.
  *
- * Always empty, because no such record exists. Written as a function over the
- * peer list rather than a constant so the call site is already correct, and so
- * the emptiness is asserted by a test rather than assumed.
+ * Built from location heartbeats the peers signed and sent, joined to the peer
+ * list only for a display name. A peer that has never reported a position gets
+ * no marker — SecureMesh does not know where it is, and no amount of network
+ * metadata would tell it.
+ *
+ * **Expired positions are excluded.** They are older than three heartbeat
+ * intervals, so they say where a node *was*. They remain in the core's state
+ * and are still reported in the peer list as a last known position; they are
+ * simply not drawn as though they were current.
  */
-export function peerMarkers(_peers: Peer[]): PeerMarker[] {
-  return [];
+export function peerMarkers(
+  peers: Peer[],
+  locations: PeerLocationView[],
+): PeerMarker[] {
+  const names = new Map(peers.map((peer) => [peer.nodeId, peer.nodeName]));
+  const markers: PeerMarker[] = [];
+
+  for (const location of locations) {
+    if (location.freshness === "EXPIRED") {
+      continue;
+    }
+    if (
+      !Number.isFinite(location.latitude) ||
+      !Number.isFinite(location.longitude)
+    ) {
+      continue;
+    }
+
+    markers.push({
+      nodeId: location.nodeId,
+      // Falls back to the node ID rather than inventing a name.
+      nodeName: names.get(location.nodeId) ?? location.nodeId,
+      position: {
+        latitude: location.latitude,
+        longitude: location.longitude,
+      },
+      accuracyMeters: location.accuracyMeters,
+      source: location.locationSource,
+      freshness: location.freshness,
+      capturedAt: location.capturedAt,
+      receivedAt: location.receivedAt,
+      ageSeconds: location.ageSeconds,
+      sequence: location.sequence,
+    });
+  }
+
+  return markers;
 }
+
+/** How a peer's position reads in the legend and popup. */
+export const FRESHNESS_LABEL: Record<LocationFreshness, string> = {
+  CURRENT: "Current",
+  STALE: "Stale",
+  EXPIRED: "Expired",
+};
 
 /**
  * Radius of the accuracy circle in screen pixels, or `null` for no circle.

@@ -73,8 +73,8 @@ export function KnowledgeBasePanel({ status, onChanged }: KnowledgeBasePanelProp
     return (
       <Panel title="Knowledge base">
         <div className="key-value" aria-busy="true">
-          <div className="skeleton" style={{ height: 32 }} />
-          <div className="skeleton" style={{ height: 32 }} />
+          <div className="skeleton skeleton--line" />
+          <div className="skeleton skeleton--line" />
         </div>
       </Panel>
     );

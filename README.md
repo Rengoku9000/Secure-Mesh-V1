@@ -334,6 +334,33 @@ Deleting the directory resets the node to a first launch.
   `LocationProvider` when the operator asks; there is no `watchPosition` and no
   movement history
 
+**Node location heartbeat**
+
+- Every node publishes its own position to **authorized peers only**, every five
+  minutes, with the first publication as soon as a position is available rather
+  than after the first interval
+- **A peer cannot speak for another node.** The message body carries no node
+  identifier at all — attribution comes from the authenticated session, so the
+  spoofing question is removed rather than checked
+- **Ordered by sequence, not by clock.** Each node keeps a monotonic counter and
+  a receiver refuses anything not strictly newer. Two nodes do not share a
+  clock, and comparing timestamps would let a fast one overwrite fresher data
+- **Ephemeral.** Held in memory, one entry per peer, always the latest. Never
+  written to the event log, never stored as an incident, never replicated
+  onward, and gone on restart — because it describes *now*
+- **Freshness is not reachability.** Current under 5 minutes, stale to 15,
+  expired beyond. A node can be connected and unable to obtain a position, so an
+  expired position is kept as a *last known* position rather than deleted, and
+  never drawn as current
+- **Nothing is inferred.** A position comes from the node's own
+  `LocationProvider` or not at all. IP addresses, transport peer IDs and mDNS
+  records say where a packet came from, not where a device is
+- **Audited on transition only** — `peer.location_available` and
+  `peer.location_expired`. A heartbeat every five minutes is an observation, and
+  logging each would bury every real security event
+- **This shares personal data**: a node's position is where the person carrying
+  it is. It goes to authorized peers over the local mesh and nowhere else
+
 **Phase 2.6 — deterministic synchronisation**
 
 - Replication is **caused**, not waited for: every legitimate cause —

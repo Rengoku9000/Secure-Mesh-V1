@@ -19,8 +19,8 @@ export function IntelligencePanel({ status }: IntelligencePanelProps) {
     return (
       <Panel title="Intelligence">
         <div className="key-value" aria-busy="true">
-          <div className="skeleton" style={{ height: 32 }} />
-          <div className="skeleton" style={{ height: 32 }} />
+          <div className="skeleton skeleton--line" />
+          <div className="skeleton skeleton--line" />
         </div>
       </Panel>
     );

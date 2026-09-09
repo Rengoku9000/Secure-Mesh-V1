@@ -8,7 +8,12 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { Incident, Peer, Severity } from "../../types/core";
+import type {
+  Incident,
+  Peer,
+  PeerLocationView,
+  Severity,
+} from "../../types/core";
 import {
   accuracyRadiusPixels,
   DEVICE_SOURCE_LABEL,
@@ -140,36 +145,112 @@ test("an accuracy finer than the zoom can show is not drawn", () => {
   assert.equal(accuracyRadiusPixels(0.5, 13.1, 5), null);
 });
 
-test("no peer produces a marker, because no peer location is recorded", () => {
-  // SecureMesh holds identity, trust and reachability for a peer, and nothing
-  // about where it is. Placing one at an incident's coordinates would state a
-  // position the system does not know.
-  const peers: Peer[] = [
-    {
-      nodeId: "b8e4",
-      nodeName: "SM-B8E4",
-      publicKey: "00",
-      transportPeerId: "12D3",
-      connectionState: "CONNECTED",
-      lastSeen: "2026-08-20T10:00:00.000Z",
-      protocolVersion: 1,
-      capabilities: [],
-      equivocating: false,
-      pendingEvents: 0,
-      firstSeen: "2026-08-20T09:00:00.000Z",
-      trustState: "TRUSTED",
-      role: "PEER",
-      grantedCapabilities: [],
-      enrolledAt: "2026-08-20T09:30:00.000Z",
-      enrolledBy: null,
-      revokedAt: null,
-      revokedBy: null,
-      trustNotes: null,
-    } as unknown as Peer,
-  ];
+/** A peer record: identity and trust, never a position. */
+function peer(nodeId: string): Peer {
+  return {
+    nodeId,
+    nodeName: `SM-${nodeId.toUpperCase()}`,
+    publicKey: "00",
+    transportPeerId: "12D3",
+    connectionState: "CONNECTED",
+    lastSeen: "2026-08-20T10:00:00.000Z",
+    protocolVersion: 1,
+    capabilities: [],
+    equivocating: false,
+    pendingEvents: 0,
+    firstSeen: "2026-08-20T09:00:00.000Z",
+    trustState: "TRUSTED",
+    role: "PEER",
+    grantedCapabilities: [],
+    enrolledAt: "2026-08-20T09:30:00.000Z",
+    enrolledBy: null,
+    revokedAt: null,
+    revokedBy: null,
+    trustNotes: null,
+  } as unknown as Peer;
+}
 
-  assert.deepEqual(peerMarkers(peers), []);
-  assert.deepEqual(peerMarkers([]), []);
+/** A position a peer reported over the mesh. */
+function reported(
+  nodeId: string,
+  overrides: Partial<PeerLocationView> = {},
+): PeerLocationView {
+  return {
+    nodeId,
+    latitude: 13.1465,
+    longitude: 77.5785,
+    accuracyMeters: 20,
+    locationSource: "GNSS",
+    capturedAt: "2026-08-20T10:00:00.000Z",
+    receivedAt: "2026-08-20T10:00:05.000Z",
+    sequence: 42,
+    freshness: "CURRENT",
+    ageSeconds: 12,
+    ...overrides,
+  };
+}
+
+test("a peer that has reported a position gets a marker", () => {
+  const markers = peerMarkers([peer("b8e4")], [reported("b8e4")]);
+
+  assert.equal(markers.length, 1);
+  assert.equal(markers[0].nodeName, "SM-B8E4");
+  assert.equal(markers[0].position.latitude, 13.1465);
+  assert.equal(markers[0].accuracyMeters, 20);
+  assert.equal(markers[0].source, "GNSS");
+  assert.equal(markers[0].sequence, 42);
+});
+
+test("a peer that has reported nothing gets no marker", () => {
+  // SecureMesh does not know where it is, and no amount of network metadata
+  // would tell it. An address says where a packet came from.
+  assert.deepEqual(peerMarkers([peer("b8e4")], []), []);
+  assert.deepEqual(peerMarkers([], []), []);
+});
+
+test("an expired position is not drawn as a current one", () => {
+  // It says where the node *was*. The core still holds it as a last known
+  // position; the map does not present it as the truth.
+  const markers = peerMarkers(
+    [peer("b8e4")],
+    [reported("b8e4", { freshness: "EXPIRED", ageSeconds: 1200 })],
+  );
+  assert.equal(markers.length, 0);
+});
+
+test("an ageing position is still drawn, and marked", () => {
+  const markers = peerMarkers(
+    [peer("b8e4")],
+    [reported("b8e4", { freshness: "STALE", ageSeconds: 400 })],
+  );
+  assert.equal(markers.length, 1);
+  assert.equal(markers[0].freshness, "STALE");
+});
+
+test("a position from an unknown peer still renders, under its node id", () => {
+  // The heartbeat was authenticated by the transport, so the position is real
+  // even if the peer list has not caught up. Nothing is invented for the name.
+  const markers = peerMarkers([], [reported("c1d2")]);
+  assert.equal(markers.length, 1);
+  assert.equal(markers[0].nodeName, "c1d2");
+});
+
+test("a non-finite reported coordinate is dropped", () => {
+  const markers = peerMarkers(
+    [peer("b8e4")],
+    [reported("b8e4", { latitude: Number.NaN })],
+  );
+  assert.equal(markers.length, 0);
+});
+
+test("a peer is never placed at an incident's coordinates", () => {
+  // The old shortcut, still refused. That is where the peer was when it filed
+  // a report, possibly hours ago and kilometres away.
+  const authored = incident({ latitude: 13.9, longitude: 77.9 });
+  const markers = peerMarkers([peer("b8e4")], []);
+
+  assert.equal(markers.length, 0);
+  assert.equal(incidentMarkers([authored]).length, 1, "the incident is drawn");
 });
 
 test("the redraw signature ignores a poll that changed nothing", () => {

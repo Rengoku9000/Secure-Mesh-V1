@@ -15,6 +15,7 @@
 //! coordinates.
 
 use super::AppState;
+use crate::domain::PeerLocationView;
 use crate::error::CoreResult;
 use crate::location::{DeviceLocation, LocationPermission};
 use tauri::State;
@@ -44,4 +45,16 @@ pub fn request_location_permission(state: State<'_, AppState>) -> LocationPermis
 #[tauri::command]
 pub fn get_current_location(state: State<'_, AppState>) -> CoreResult<DeviceLocation> {
     state.runtime.current_location()
+}
+
+/// Positions authorized peers have reported, with freshness judged now.
+///
+/// Read-only and cheap: it returns what is already held in memory. Reading it
+/// takes no fix, contacts no peer, and touches no database.
+///
+/// Empty on a node with no mesh, and on one whose peers have never reported a
+/// position — which is a normal state, not a failure.
+#[tauri::command]
+pub fn get_peer_locations(state: State<'_, AppState>) -> Vec<PeerLocationView> {
+    state.runtime.peer_locations()
 }

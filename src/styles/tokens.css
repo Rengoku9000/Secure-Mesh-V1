@@ -196,3 +196,69 @@
   --shadow-md: 0 4px 16px rgb(0 0 0 / 45%);
   --shadow-lg: 0 12px 40px rgb(0 0 0 / 55%);
 }
+
+/*
+ * Layout tokens.
+ *
+ * Added in the operations-UI pass. Colour stays above; everything here is
+ * geometry, so the palette contract is untouched and both themes inherit these
+ * unchanged.
+ *
+ * These are deliberately fluid. SecureMesh is displayed on whatever monitor is
+ * plugged into the node — a field laptop at 1280x720, a control-room panel at
+ * 1920x1080 — so a fixed shell width is wrong at one end or the other. `clamp()`
+ * lets one rule serve both without duplicating the interface per resolution.
+ */
+:root {
+  /* Shell. Bounded so text never runs to absurd measure on a wide monitor,
+     but far above the old 1180px cap, which left ~740px of dead margin at
+     1920 wide. */
+  --shell-max: 1800px;
+  --shell-pad: clamp(12px, 1.6vw, 28px);
+
+  /* Fluid gaps. Compact when vertical budget is scarce, generous when it is
+     not. */
+  --gap-tight: clamp(6px, 0.6vw, 10px);
+  --gap-panel: clamp(10px, 1.1vw, 18px);
+  --gap-zone: clamp(12px, 1.3vw, 24px);
+  --pad-panel: clamp(12px, 1.1vw, 20px);
+
+  /* The right operations rail. */
+  --rail-w: clamp(280px, 22vw, 360px);
+
+  /* The tactical map is the primary operational surface, so its height tracks
+     the viewport rather than being capped at a fixed 460px. */
+  --surface-map-height: clamp(300px, 52vh, 900px);
+
+  /* Panels are flatter here than general-purpose card UI: an operations
+     console reads as one instrument, not a tray of floating cards. */
+  --radius-panel: var(--radius-md);
+
+  /* Minimum hit areas. Raised from 26-34px so trust actions and map controls
+     are usable with a trackpad or a touchscreen in the field. */
+  --hit: 38px;
+  --hit-compact: 32px;
+  --hit-map: 40px;
+
+  /* Type. Fixed rather than fluid: operational numerals and IDs must not
+     resize under the reader between one monitor and the next. Small screens
+     step these down once, in a single media query below. */
+  --fs-label: 10px;
+  --fs-meta: 12px;
+  --fs-body: 13px;
+  --fs-value: 15px;
+  --fs-title: 14px;
+}
+
+/* One density step for short/narrow viewports: 1366x768 and 1280x720 have a
+   tight vertical budget, so the interface gets denser rather than smaller. */
+@media (max-width: 1100px), (max-height: 780px) {
+  :root {
+    --gap-zone: clamp(10px, 1vw, 16px);
+    --gap-panel: clamp(8px, 0.9vw, 14px);
+    --pad-panel: clamp(10px, 1vw, 16px);
+    --surface-map-height: clamp(260px, 42vh, 520px);
+    --fs-body: 12.5px;
+    --fs-value: 14px;
+  }
+}
