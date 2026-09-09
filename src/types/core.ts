@@ -120,6 +120,39 @@ export interface SystemStatus {
   tee: ComponentStatus;
 }
 
+/**
+ * How much of a peer's reported position to trust, given its age.
+ * Mirrors `domain::peer_location::LocationFreshness`.
+ */
+export type LocationFreshness = "CURRENT" | "STALE" | "EXPIRED";
+
+/**
+ * A position a peer reported over the mesh. Mirrors
+ * `domain::peer_location::PeerLocationView`.
+ *
+ * Ephemeral operational state: held in memory by the core, never written to the
+ * event log, and never replicated onward. `nodeId` is the **authenticated**
+ * sender — the heartbeat body carries no identifier a peer could spoof.
+ */
+export interface PeerLocationView {
+  nodeId: string;
+  latitude: number;
+  longitude: number;
+  /** Reported accuracy radius. `null` means none was reported, never zero. */
+  accuracyMeters: number | null;
+  /** How the peer obtained it. A wireless fix is never relabelled as GNSS. */
+  locationSource: IncidentLocationSource;
+  /** When the peer measured it — not when this node received it. */
+  capturedAt: string;
+  /** When this node received it. Distinct from `capturedAt`. */
+  receivedAt: string;
+  /** The origin's monotonic counter, which decides which update is newer. */
+  sequence: number;
+  freshness: LocationFreshness;
+  /** Seconds since receipt, for "updated N min ago". */
+  ageSeconds: number;
+}
+
 /** Geographic extent of a basemap. Mirrors `map::BoundingBox`. */
 export interface BoundingBox {
   minLatitude: number;

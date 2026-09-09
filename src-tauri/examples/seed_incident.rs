@@ -29,7 +29,9 @@ fn main() {
     let mut args = std::env::args().skip(1);
 
     let (Some(data_dir), Some(description)) = (args.next(), args.next()) else {
-        eprintln!("usage: seed_incident <data-dir> <description> [severity]");
+        eprintln!(
+            "usage: seed_incident <data-dir> <description> [severity] [--locate] [--at=<lat>,<lon>] [--accuracy=<metres>]"
+        );
         std::process::exit(2);
     };
     let remaining: Vec<String> = args.collect();
@@ -49,6 +51,15 @@ fn main() {
                 longitude.trim().parse::<f64>().ok()?,
             ))
         });
+    // `--accuracy=<metres>` attaches an uncertainty radius to a hand-placed
+    // position. The source stays UNKNOWN: a supplied radius says how coarse a
+    // coordinate is, and nothing about what produced it. Only a real reading
+    // through --locate can claim a source.
+    let explicit_accuracy = remaining
+        .iter()
+        .find_map(|argument| argument.strip_prefix("--accuracy="))
+        .and_then(|value| value.trim().parse::<f64>().ok());
+
     let severity = remaining
         .iter()
         .find(|argument| !argument.starts_with("--"))
@@ -105,7 +116,10 @@ fn main() {
         longitude: explicit
             .map(|(_, longitude)| longitude)
             .or_else(|| fix.as_ref().map(|reading| reading.longitude)),
-        accuracy_meters: fix.as_ref().and_then(|reading| reading.accuracy_meters),
+        accuracy_meters: fix
+            .as_ref()
+            .and_then(|reading| reading.accuracy_meters)
+            .or(explicit_accuracy),
         location_source: fix
             .as_ref()
             .map(|reading| LocationSource::from(reading.source))

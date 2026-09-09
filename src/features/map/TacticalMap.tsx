@@ -17,7 +17,7 @@ import {
   getMapBasemap,
   getMapGeojson,
 } from "../../lib/ipc";
-import { formatAccuracy, formatTimestamp } from "../../lib/format";
+import { formatAccuracy, formatAge, formatTimestamp } from "../../lib/format";
 import type {
   Basemap,
   ComponentStatus,
@@ -26,6 +26,7 @@ import type {
   IncidentIndexState,
   IndexState,
   Peer,
+  PeerLocationView,
   PublicIdentity,
 } from "../../types/core";
 import { projectBasemap, type ProjectedBasemap } from "./basemap.ts";
@@ -35,6 +36,7 @@ import {
   DEVICE_SOURCE_LABEL,
   incidentMarkers,
   markerSignature,
+  FRESHNESS_LABEL,
   SOURCE_LABEL,
   peerMarkers,
   SEVERITY_RADIUS,
@@ -59,6 +61,8 @@ import {
 interface TacticalMapProps {
   incidents: Incident[];
   peers: Peer[];
+  /** Positions peers reported over the mesh. Authoritative, or absent. */
+  peerLocations: PeerLocationView[];
   identity: PublicIdentity | null;
   /** The map status row, so the panel can say why there is no basemap. */
   status: ComponentStatus | undefined;
@@ -94,6 +98,7 @@ const WHEEL_ZOOM_STEP = 0.6;
 export function TacticalMap({
   incidents,
   peers,
+  peerLocations,
   identity,
   indexStates,
   status,
@@ -111,6 +116,9 @@ export function TacticalMap({
   const [geometry, setGeometry] = useState<ProjectedBasemap | null>(null);
 
   const [here, setHere] = useState<DeviceLocation | null>(null);
+  // Peer selection is separate from incident selection: they are different
+  // kinds of thing, and a peer is not an incident the dashboard can open.
+  const [selectedPeer, setSelectedPeer] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
 
@@ -171,9 +179,12 @@ export function TacticalMap({
     [signature],
   );
 
-  // Always empty today: SecureMesh holds no authoritative peer position. Kept
-  // as a real call so the layer is correct the day one exists.
-  const peerPoints = useMemo(() => peerMarkers(peers), [peers]);
+  // Built only from positions peers reported over the authenticated mesh.
+  // Nothing is inferred from an address or from an incident's coordinates.
+  const peerPoints = useMemo(
+    () => peerMarkers(peers, peerLocations),
+    [peers, peerLocations],
+  );
 
   const viewport: Viewport = useMemo(
     () => ({ centre, zoom, width: size.width, height: size.height }),
@@ -226,11 +237,17 @@ export function TacticalMap({
    */
   const fitAll = useCallback(() => {
     const points = markers.map((marker) => marker.position);
+    // Peers whose position is current or ageing. Expired ones are excluded:
+    // they say where a node was, and framing the view around them would move
+    // the camera for something that is no longer true.
+    for (const peer of peerPoints) {
+      points.push(peer.position);
+    }
     if (here) {
       points.push({ latitude: here.latitude, longitude: here.longitude });
     }
     return frameOn(points);
-  }, [markers, here, frameOn]);
+  }, [markers, peerPoints, here, frameOn]);
 
   // Frames once, when there is first something to frame. Not on every poll —
   // the map must not yank itself out from under someone who has panned away.
@@ -390,6 +407,12 @@ export function TacticalMap({
 
   // --- Selection ----------------------------------------------------------
   //
+  const peerCard = useMemo(
+    () => peerPoints.find((peer) => peer.nodeId === selectedPeer) ?? null,
+    [peerPoints, selectedPeer],
+  );
+  const peerPoint = peerCard ? toScreen(peerCard.position, viewport) : { x: 0, y: 0 };
+
   // Derived from the dashboard's selection, never stored again here. An
   // incident with no coordinates has no marker, so it has no popup either —
   // the table is where an unlocated incident belongs.
@@ -579,14 +602,47 @@ export function TacticalMap({
           <g className="map__peers">
             {peerPoints.map((peer) => {
               const point = toScreen(peer.position, viewport);
+              const radius = accuracyRadiusPixels(
+                peer.accuracyMeters,
+                peer.position.latitude,
+                zoom,
+              );
+              const stale = peer.freshness === "STALE";
               return (
-                <circle
-                  key={peer.nodeId}
-                  className="map__peer"
-                  cx={point.x}
-                  cy={point.y}
-                  r={7}
-                />
+                <g key={peer.nodeId}>
+                  {radius !== null && (
+                    <circle
+                      className="map__accuracy--peer"
+                      cx={point.x}
+                      cy={point.y}
+                      r={radius}
+                    />
+                  )}
+                  <circle
+                    className={`map__peer${stale ? " map__peer--stale" : ""}`}
+                    cx={point.x}
+                    cy={point.y}
+                    r={7}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Peer ${peer.nodeName}`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() => setSelectedPeer(peer.nodeId)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedPeer(peer.nodeId);
+                      }
+                    }}
+                  />
+                  <text
+                    className="map__peer-label"
+                    x={point.x + 12}
+                    y={point.y + 4}
+                  >
+                    {peer.nodeName}
+                  </text>
+                </g>
               );
             })}
           </g>
@@ -681,8 +737,20 @@ export function TacticalMap({
           <span className="map__legend-item">
             <span className="map__swatch map__swatch--node" /> My node
           </span>
-          <span className="map__legend-item map__legend-item--muted">
-            <span className="map__swatch map__swatch--peer" /> Peer (no position held)
+          {/* Reflects what is actually held, rather than a fixed caption. A
+              peer with no heartbeat and a peer whose position has aged out are
+              different situations, and neither is "we have not built this". */}
+          <span
+            className={`map__legend-item${
+              peerPoints.length === 0 ? " map__legend-item--muted" : ""
+            }`}
+          >
+            <span className="map__swatch map__swatch--peer" />{" "}
+            {peerPoints.length === 0
+              ? peerLocations.length === 0
+                ? "Peer (location unavailable)"
+                : "Peer (stale location)"
+              : "Peer"}
           </span>
           <span className="map__legend-item">
             <span className="map__swatch map__swatch--incident" /> Incident
@@ -788,6 +856,74 @@ export function TacticalMap({
             >
               View incident
             </button>
+          </div>
+        )}
+
+
+        {/* A peer, from the position it reported over the mesh. Provenance is
+            stated in full: an operator needs to know how good the reading was,
+            what produced it, and how long ago it arrived. */}
+        {peerCard && (
+          <div
+            className="map__popup map__popup--peer"
+            style={{ left: peerPoint.x, top: peerPoint.y }}
+            role="dialog"
+            aria-label={`Peer ${peerCard.nodeName}`}
+          >
+            <div className="map__popup-head">
+              <span className="map__popup-kind">SecureMesh node</span>
+              <button
+                type="button"
+                className="map__popup-close"
+                aria-label="Dismiss"
+                onClick={() => setSelectedPeer(null)}
+              >
+                ×
+              </button>
+            </div>
+
+            <p className="map__popup-text mono">{peerCard.nodeName}</p>
+
+            <dl className="map__popup-facts">
+              <div>
+                <dt>Location</dt>
+                <dd className="mono">
+                  {peerCard.position.latitude.toFixed(6)},{" "}
+                  {peerCard.position.longitude.toFixed(6)}
+                </dd>
+              </div>
+              <div>
+                <dt>Accuracy</dt>
+                <dd className="mono">
+                  {peerCard.accuracyMeters === null
+                    ? "Unknown"
+                    : formatAccuracy(peerCard.accuracyMeters)}
+                </dd>
+              </div>
+              <div>
+                <dt>Source</dt>
+                {/* Whatever the peer actually reported. Never relabelled. */}
+                <dd>{SOURCE_LABEL[peerCard.source]}</dd>
+              </div>
+              <div>
+                <dt>Updated</dt>
+                <dd>{formatAge(peerCard.ageSeconds)}</dd>
+              </div>
+              <div>
+                <dt>Captured</dt>
+                <dd>{formatTimestamp(peerCard.capturedAt)}</dd>
+              </div>
+              <div>
+                <dt>Sequence</dt>
+                <dd className="mono">{peerCard.sequence}</dd>
+              </div>
+            </dl>
+
+            <span
+              className={`map__freshness map__freshness--${peerCard.freshness.toLowerCase()}`}
+            >
+              {FRESHNESS_LABEL[peerCard.freshness]} location
+            </span>
           </div>
         )}
 

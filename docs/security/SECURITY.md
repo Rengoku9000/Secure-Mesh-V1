@@ -563,6 +563,50 @@ why such a fix is recorded as `WIRELESS` rather than `GNSS`. A dedicated GNSS
 receiver would provide positioning independently of Internet connectivity; that
 is future hardware work and the map does not change it.
 
+### 5.19 Node location heartbeat
+
+Every node publishes its own position to authorized peers every five minutes, so
+an operator can see where the mesh is rather than only what it has reported.
+
+**This shares personal data.** A node's position is where the person carrying it
+is. The feature is described here in those terms deliberately: it is not
+telemetry, and treating it as such is how location data ends up somewhere it
+should not be.
+
+| Property | Mechanism |
+|---|---|
+| Authorized peers only | Gated on `Capability::PeerDiscover` through the same `authorize` call that governs incident replication. Unknown, pending and revoked peers are told nothing and their heartbeats are refused |
+| No identifier to forge | The message body carries **no node ID**. Attribution comes from the authenticated transport session, so there is no field in which a peer could name another node — the spoofing question is removed rather than checked |
+| Signed | An ordinary `Envelope`, Ed25519-signed with the existing domain separator. No new key, no new certificate, no custom MAC |
+| Ordered by sequence, not clock | Each node keeps a monotonic counter. A heartbeat is refused unless its sequence exceeds the one held. Two nodes do not share a clock, and comparing timestamps would let a fast clock overwrite fresher data |
+| Re-validated on arrival | Coordinates and accuracy go through `Location::new`, the same constructor the incident path uses. A signature proves authorship, not sanity |
+| Ephemeral | Held in memory only. Never written to the event log, never stored as an incident, never replicated onward. It does not survive a restart, because it describes *now* |
+| Coalescing, not queued | One entry per peer, always the latest. A peer unreachable for an hour costs one entry when it returns, not twelve |
+| Withdrawn on revocation | Revoking a peer drops the position it reported. It was only ever held on that peer's authority |
+| Audited on transition only | `peer.location_available` and `peer.location_expired`. A heartbeat every five minutes is an observation, not a security decision, and logging each would bury every real event |
+| No coordinates in the audit log | An audit trail is a security record, not a movement log. `tests/location_heartbeat.rs` asserts no coordinate reaches it |
+
+**Freshness is not reachability.** A node can be connected and unable to obtain a
+position. `ONLINE` and "we know where it is" are separate states: current under
+five minutes, stale to fifteen, expired beyond. An expired position is kept and
+shown as a *last known* position rather than deleted — "we last saw it here,
+eighteen minutes ago" is useful, and silence is not — but it is never drawn as
+where a node is now.
+
+**Nothing is inferred.** A position comes from the node's own
+`LocationProvider` or not at all. IP addresses, transport peer IDs, mDNS records
+and network topology say where a packet came from, not where a device is, and
+none of them is used. A failed fix publishes nothing and does not advance the
+sequence: a counter that moved without a position would tell peers a heartbeat
+had been missed rather than never made.
+
+**Direct peers only.** A heartbeat reaches the nodes this one is connected to.
+There is no relay and no rebroadcast, so there is no storm to cause.
+
+**The map is still offline, and the provider still may not be.** A Windows
+wireless fix is network-assisted, is recorded as `WIRELESS`, and is never
+relabelled as GNSS at any point between the sensor and a peer's screen.
+
 ### 5.9 Hostile input from the network
 
 All of the following are tested (`tests/mesh_sync.rs`, `networking::protocol`):

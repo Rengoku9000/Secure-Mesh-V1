@@ -1755,3 +1755,86 @@ body {
   letter-spacing: 0.08em;
   color: var(--accent);
 }
+
+/* --- Map: peer nodes ------------------------------------------------------ */
+
+/* A peer's own reported position. Blue against the node's green, so "me" and
+   "someone else" are never confused at a glance. */
+.map__peer {
+  fill: var(--accent);
+  stroke: var(--bg-surface);
+  stroke-width: 2;
+  cursor: pointer;
+}
+
+.map__peer:hover {
+  stroke: var(--text-primary);
+}
+
+.map__peer:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* An ageing position is drawn hollow: still shown, visibly not current. */
+.map__peer--stale {
+  fill: var(--bg-surface);
+  stroke: var(--accent);
+  stroke-dasharray: 3 2;
+}
+
+.map__accuracy--peer {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.6;
+}
+
+.map__peer-label {
+  font-size: 10px;
+  font-weight: 600;
+  fill: var(--accent);
+  paint-order: stroke;
+  stroke: var(--bg-inset);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.map__popup--peer {
+  border-left: 3px solid var(--accent);
+}
+
+.map__popup-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+/* How much of a reported position to trust. Named states rather than a colour
+   alone, so the meaning survives a monochrome display. */
+.map__freshness {
+  display: inline-block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  background: var(--bg-inset);
+}
+
+.map__freshness--current {
+  color: var(--state-ok);
+  border-color: var(--state-ok);
+  background: var(--state-ok-soft);
+}
+
+.map__freshness--stale {
+  color: var(--state-degraded);
+  border-color: var(--state-degraded);
+  background: var(--state-degraded-soft);
+}

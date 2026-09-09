@@ -52,6 +52,7 @@ use observe::{observe, SyncLog};
 
 use crate::domain::trust::{Capability, TrustState};
 use crate::domain::MeshEvent as DomainEvent;
+use crate::domain::{PeerLocationBook, PeerLocationView};
 use crate::error::{CoreError, CoreResult};
 use crate::identity::NodeIdentity;
 use crate::networking::protocol::{Envelope, MessageBody, OriginWatermark};
@@ -76,6 +77,10 @@ pub struct SyncReport {
     pub events_rejected: usize,
     /// Equivocations detected.
     pub conflicts_detected: usize,
+    /// Peer location heartbeats accepted.
+    pub locations_accepted: usize,
+    /// Heartbeats refused as stale, duplicate or reordered.
+    pub locations_rejected: usize,
     /// Messages that failed to decode or validate.
     pub messages_rejected: usize,
     /// Messages accepted and handled.
@@ -123,6 +128,13 @@ pub struct SyncEngine<T: MeshTransport> {
     /// surviving a crash would be a lie. Everything durable is in the event log
     /// and the trust store.
     links: HashMap<String, PeerLink>,
+    /// The latest position each peer has reported.
+    ///
+    /// In memory for the same reason `links` is: it describes *now*. A
+    /// five-minute heartbeat is operational state, not a record of something
+    /// that happened, and writing one to the append-only log every five
+    /// minutes would add hundreds of rows a day that nobody reads.
+    peer_locations: PeerLocationBook,
 }
 
 impl<T: MeshTransport> SyncEngine<T> {
@@ -130,11 +142,26 @@ impl<T: MeshTransport> SyncEngine<T> {
         Self {
             transport,
             links: HashMap::new(),
+            peer_locations: PeerLocationBook::new(),
         }
     }
 
     pub fn transport(&self) -> &T {
         &self.transport
+    }
+
+    /// Positions peers have reported, with freshness judged as of `now`.
+    pub fn peer_locations(&self, now: chrono::DateTime<chrono::Utc>) -> Vec<PeerLocationView> {
+        self.peer_locations.view(now)
+    }
+
+    /// Drops a peer's reported position.
+    ///
+    /// Called when authorization is withdrawn: a revoked peer's claim about
+    /// itself should not linger on the map after the operator has said it is
+    /// no longer trusted.
+    pub fn forget_peer_location(&mut self, node_id: &str) -> bool {
+        self.peer_locations.forget(node_id)
     }
 
     /// Peers with an open authenticated session.
@@ -594,6 +621,52 @@ impl<T: MeshTransport> SyncEngine<T> {
                 database.refresh_local_sync_status(identity.node_id())?;
             }
 
+            MessageBody::LocationHeartbeat {
+                latitude_e7,
+                longitude_e7,
+                accuracy_mm,
+                source,
+                captured_at,
+                sequence,
+            } => {
+                // Gated like everything else that carries operational data.
+                // An unknown, pending or revoked peer gets an error and its
+                // position is never recorded.
+                Self::authorize(database, &from.node_id, Capability::PeerDiscover)?;
+
+                let reading = crate::domain::LocationReport::from_wire(
+                    latitude_e7,
+                    longitude_e7,
+                    accuracy_mm,
+                    source,
+                    captured_at,
+                    sequence,
+                )
+                .validated()?;
+
+                // Attributed to the *authenticated* peer, never to anything
+                // the body claimed — the body has no such field.
+                let location = reading.attributed_to(&from.node_id, crate::domain::now());
+
+                match self.peer_locations.accept(location) {
+                    // First position for this peer, or the first after it had
+                    // expired: a state transition worth recording once.
+                    Ok(true) => {
+                        audit(
+                            AuditEvent::PeerLocationAvailable,
+                            AuditOutcome::Success,
+                            &format!("peer={} seq={sequence}", from.node_id),
+                        );
+                        report.locations_accepted += 1;
+                    }
+                    // A routine five-minute update. Deliberately not audited:
+                    // a heartbeat is an observation, and logging one every
+                    // five minutes would bury every real security event.
+                    Ok(false) => report.locations_accepted += 1,
+                    Err(_) => report.locations_rejected += 1,
+                }
+            }
+
             MessageBody::Ping { nonce } => {
                 self.send(identity, &from.node_id, MessageBody::Pong { nonce })?;
             }
@@ -784,6 +857,61 @@ impl<T: MeshTransport> SyncEngine<T> {
         // round from wherever it got to.
         let _ = self.transport.send(to, &envelope);
         Ok(())
+    }
+
+    /// Publishes this node's position to every connected, authorized peer.
+    ///
+    /// Returns how many peers it reached. Sent to authorized peers only: an
+    /// unknown, pending or revoked peer is not told where this node is, which
+    /// is the same gate that governs incident replication.
+    ///
+    /// Nothing is queued. A peer that is disconnected simply does not receive
+    /// this heartbeat, and gets the next one — only the latest position ever
+    /// matters, so there is no backlog to accumulate.
+    pub fn broadcast_location(
+        &mut self,
+        database: &Database,
+        identity: &NodeIdentity,
+        reading: crate::domain::LocationReport,
+    ) -> CoreResult<usize> {
+        let body = MessageBody::LocationHeartbeat {
+            latitude_e7: reading.latitude_e7(),
+            longitude_e7: reading.longitude_e7(),
+            accuracy_mm: reading.accuracy_mm(),
+            source: reading.source,
+            captured_at: reading.captured_at,
+            sequence: reading.sequence,
+        };
+
+        let recipients: Vec<String> = self.links.keys().cloned().collect();
+        let mut sent = 0;
+
+        for peer_node_id in recipients {
+            let authorized = database
+                .trust_state_of(&peer_node_id)
+                .map(|state| state.permits_authorized_operations())
+                .unwrap_or(false);
+            if !authorized {
+                continue;
+            }
+
+            self.send(identity, &peer_node_id, body.clone())?;
+            sent += 1;
+        }
+
+        Ok(sent)
+    }
+
+    /// Audits peers whose position has just aged out.
+    ///
+    /// Returns the peers newly marked expired, so the caller records the
+    /// transition once rather than every time the state is read.
+    pub fn expire_peer_locations(&mut self, now: chrono::DateTime<chrono::Utc>) -> Vec<String> {
+        self.peer_locations
+            .expired(now)
+            .into_iter()
+            .map(str::to_string)
+            .collect()
     }
 
     /// Starts a fresh sync round with every connected peer.

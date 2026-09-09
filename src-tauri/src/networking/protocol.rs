@@ -23,9 +23,10 @@
 //! error for any malformed input and never panics, and every variable-length
 //! field is bounded before allocation.
 
-use crate::domain::MeshEvent;
+use crate::domain::{LocationSource, MeshEvent};
 use crate::error::{CoreError, CoreResult};
 use crate::identity::NodeIdentity;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -107,6 +108,46 @@ pub enum MessageBody {
         /// Highest contiguous sequence the acknowledging node now holds.
         accepted_through: u64,
     },
+    /// Where the sending node says it is, now.
+    ///
+    /// **Carries no node identifier.** The envelope's authenticated sender is
+    /// the subject, so there is no field in which a peer could name another
+    /// node — the spoofing question is removed rather than checked.
+    ///
+    /// Ephemeral: the receiver holds the latest in memory and never writes it
+    /// to the event log. A node being somewhere five minutes ago is not a fact
+    /// worth keeping forever, and replicating it would put operational state
+    /// into an append-only record of things that happened.
+    LocationHeartbeat {
+        /// Latitude in units of 1e-7 degrees.
+        ///
+        /// **Fixed point, not a float, and that is load-bearing.** An
+        /// envelope's signature is verified by re-serialising its body and
+        /// comparing bytes, so every field must survive a JSON round trip
+        /// exactly. `serde_json`'s float parser is not precisely inverse to
+        /// its writer at full `f64` precision — a real reading was observed
+        /// leaving as `13.133598560775905` and returning as
+        /// `...903`, which invalidated the signature. Integers have no such
+        /// failure mode.
+        ///
+        /// 1e-7 degrees is about a centimetre, far finer than any source here
+        /// resolves, and the whole range fits in an `i32`.
+        latitude_e7: i32,
+        /// Longitude in units of 1e-7 degrees. See `latitude_e7`.
+        longitude_e7: i32,
+        /// Radius of uncertainty in millimetres, or absent when none was
+        /// reported. Integer for the same reason as the coordinates.
+        accuracy_mm: Option<u64>,
+        /// How the position was obtained. A wireless fix is never relabelled.
+        source: LocationSource,
+        /// When the sender measured it — not when this node received it.
+        ///
+        /// Serialised as an RFC 3339 string, which round-trips exactly.
+        captured_at: DateTime<Utc>,
+        /// The origin's monotonic counter. What decides which update is newer,
+        /// because two nodes do not share a clock.
+        sequence: u64,
+    },
     /// Liveness probe.
     Ping { nonce: u64 },
     /// Liveness response, echoing the probe's nonce.
@@ -123,6 +164,7 @@ impl MessageBody {
             MessageBody::SyncResponse { .. } => "SYNC_RESPONSE",
             MessageBody::EventBatch { .. } => "EVENT_BATCH",
             MessageBody::Ack { .. } => "ACK",
+            MessageBody::LocationHeartbeat { .. } => "LOCATION_HEARTBEAT",
             MessageBody::Ping { .. } => "PING",
             MessageBody::Pong { .. } => "PONG",
         }
@@ -320,7 +362,13 @@ impl Envelope {
                     return Err(CoreError::validation("too many capabilities announced"));
                 }
             }
-            MessageBody::Ack { .. } | MessageBody::Ping { .. } | MessageBody::Pong { .. } => {}
+            // Coordinates and provenance are checked by `LocationReport`,
+            // which is the same validation the incident path uses. Nothing
+            // here is a collection, so there is no size to bound.
+            MessageBody::LocationHeartbeat { .. }
+            | MessageBody::Ack { .. }
+            | MessageBody::Ping { .. }
+            | MessageBody::Pong { .. } => {}
         }
         Ok(())
     }

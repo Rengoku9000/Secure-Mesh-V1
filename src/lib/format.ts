@@ -86,3 +86,22 @@ export function formatAccuracy(meters: number | null): string {
   }
   return meters < 10 ? `±${meters.toFixed(1)} m` : `±${Math.round(meters)} m`;
 }
+
+/**
+ * How long ago something happened, in words.
+ *
+ * Coarse on purpose: "4 min ago" is what an operator needs from a peer's last
+ * heartbeat, and a second-by-second countdown would imply a precision the
+ * five-minute interval does not have.
+ */
+export function formatAge(seconds: number): string {
+  if (seconds < 60) {
+    return "just now";
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} min ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `${hours} h ago` : `${Math.floor(hours / 24)} d ago`;
+}

@@ -64,6 +64,7 @@ pub fn run() {
 
             let runtime = Arc::new(runtime);
             spawn_mesh_loop(Arc::clone(&runtime));
+            spawn_location_heartbeat(Arc::clone(&runtime));
             app.manage(AppState::new(runtime));
             Ok(())
         })
@@ -92,6 +93,7 @@ pub fn run() {
             commands::get_location_permission,
             commands::request_location_permission,
             commands::get_current_location,
+            commands::get_peer_locations,
             commands::get_knowledge_documents,
             commands::get_map_basemap,
             commands::get_map_geojson,
@@ -249,6 +251,60 @@ fn project_root() -> Option<std::path::PathBuf> {
 /// disconnection event, and is deliberately infrequent. In Phase 2.5 this loop
 /// ran a full round every five seconds and *was* the trigger, which is why an
 /// approved peer could sit idle: nothing connected the decision to the work.
+/// Publishes this node's position to authorized peers on a fixed interval.
+///
+/// # Why its own thread
+///
+/// Obtaining a position blocks — the Windows location service can take twelve
+/// seconds, and a GNSS receiver longer. Doing that on the sync pump, which
+/// ticks every hundred milliseconds, would stall replication for the duration
+/// of every fix. One thread for the whole node, not one per peer.
+///
+/// # Why the first publication is not delayed
+///
+/// A node that waited five minutes before saying where it is would be invisible
+/// on a peer's map for the whole of a short demonstration, and for the most
+/// useful five minutes of a real deployment.
+///
+/// # Failure
+///
+/// A failed fix publishes nothing and advances no sequence. It is retried on a
+/// shorter interval, but not so short that a device with no receiver is asked
+/// constantly — a location service being unable to answer is a normal state,
+/// not an error to hammer at.
+fn spawn_location_heartbeat(runtime: Arc<NodeRuntime>) {
+    if !runtime.mesh_attached() {
+        return;
+    }
+
+    const INTERVAL: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+    const RETRY: std::time::Duration = std::time::Duration::from_secs(30);
+
+    std::thread::Builder::new()
+        .name("securemesh-location".to_string())
+        .spawn(move || loop {
+            let wait = match runtime.publish_location() {
+                Ok(Some(sequence)) => {
+                    eprintln!("[securemesh] location published (seq {sequence})");
+                    INTERVAL
+                }
+                // No position available. Nothing was sent, nothing invented,
+                // and the sequence is untouched.
+                Ok(None) => RETRY,
+                Err(error) => {
+                    eprintln!(
+                        "[securemesh] location heartbeat failed: {}",
+                        error.message()
+                    );
+                    RETRY
+                }
+            };
+
+            std::thread::sleep(wait);
+        })
+        .expect("spawn the location heartbeat thread");
+}
+
 fn spawn_mesh_loop(runtime: Arc<NodeRuntime>) {
     if !runtime.mesh_attached() {
         return;

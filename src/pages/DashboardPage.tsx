@@ -20,6 +20,7 @@ import {
   getIntelligenceStatus,
   getNetworkStatus,
   getNodeIdentity,
+  getPeerLocations,
   getPeers,
   getSystemStatus,
 } from "../lib/ipc";
@@ -32,6 +33,7 @@ import type {
   Peer,
   PublicIdentity,
   SystemStatus,
+  PeerLocationView,
 } from "../types/core";
 
 /**
@@ -63,6 +65,9 @@ export function DashboardPage() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [network, setNetwork] = useState<NetworkStatus | null>(null);
   const [peers, setPeers] = useState<Peer[]>([]);
+  // Ephemeral: what peers have reported about themselves, held by the core in
+  // memory. Never persisted here, never replicated onward.
+  const [peerLocations, setPeerLocations] = useState<PeerLocationView[]>([]);
   const [authority, setAuthority] = useState<LocalAuthority | null>(null);
   const [intelligence, setIntelligence] = useState<IntelligenceStatus | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -88,6 +93,7 @@ export function DashboardPage() {
         nextStatus,
         nextNetwork,
         nextPeers,
+        nextPeerLocations,
         nextIncidents,
         nextIndexStates,
         nextAuthority,
@@ -96,6 +102,7 @@ export function DashboardPage() {
         getSystemStatus(),
         getNetworkStatus(),
         getPeers(),
+        getPeerLocations(),
         getIncidents(),
         getIncidentIndexStates(),
         getLocalAuthority(),
@@ -105,6 +112,7 @@ export function DashboardPage() {
       setSystemStatus(nextStatus);
       setNetwork(nextNetwork);
       setPeers(nextPeers);
+      setPeerLocations(nextPeerLocations);
       setIncidents(nextIncidents);
       setIndexStates(nextIndexStates);
       setAuthority(nextAuthority);
@@ -171,6 +179,7 @@ export function DashboardPage() {
           <TacticalMap
             incidents={incidents}
             peers={peers}
+            peerLocations={peerLocations}
             identity={identity}
             indexStates={indexStates}
             status={systemStatus?.map}

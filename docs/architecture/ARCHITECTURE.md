@@ -517,6 +517,83 @@ right answer differs between a Jetson-class GPU device and a CPU-only SBC.
 
 ---
 
+### 6c.4 Node location heartbeat
+
+```text
+   LocationProvider ──▶ publish_location() ──▶ Envelope (signed)
+                                                    │
+                                          authorized peers only
+                                                    │
+                                                    ▼
+                                        PeerLocationBook (in memory)
+                                                    │
+                                                    ▼
+                                             Tactical Map
+```
+
+Every five minutes a node takes a position and tells its authorized peers. The
+first publication happens as soon as a position is available rather than after
+the first interval — a node invisible for the first five minutes is invisible
+for the most useful five minutes.
+
+**On its own thread.** Obtaining a fix blocks: the Windows location service can
+take twelve seconds. Doing that on the sync pump, which ticks every hundred
+milliseconds, would stall replication for the duration of every fix. One thread
+for the node, never one per peer.
+
+**A failed fix publishes nothing and advances no sequence.** Nothing is
+invented, and a counter that moved without a position would tell peers a
+heartbeat had been missed rather than never made. Failures retry on a shorter
+interval, bounded so a device with no receiver is not asked constantly.
+
+#### Ordering is by sequence, not by clock
+
+Each node keeps a monotonic counter, and a receiver refuses anything not
+strictly newer than what it holds. This is the same principle the event log uses
+for replication, applied to ephemeral state: two nodes do not share a clock, and
+comparing timestamps would let a peer with a fast clock overwrite fresher data.
+The counter lives in memory — it orders the heartbeats of one process lifetime,
+and a restart re-announces from 1 to peers that have no record of the previous
+run either.
+
+#### Ephemeral, not a record
+
+The receiver holds one entry per peer, always the latest, in memory. It is never
+written to the event log, never stored as an incident, and never replicated
+onward. An incident is something that happened and is worth keeping forever; a
+node being somewhere five minutes ago is not, and a heartbeat writing to an
+append-only log would add hundreds of rows a day that nobody reads.
+
+Nothing queues. A peer that is disconnected simply misses a heartbeat and gets
+the next one, so an hour out of contact costs one entry on return rather than
+twelve.
+
+#### Freshness is not reachability
+
+| Age | State | Shown as |
+|---|---|---|
+| under 5 min | `CURRENT` | The node's position |
+| 5–15 min | `STALE` | Drawn hollow, marked ageing |
+| over 15 min | `EXPIRED` | Kept as a last known position; not drawn as current |
+
+A node can be connected and unable to obtain a position. `ONLINE` and "we know
+where it is" are separate questions, and an expired position is kept rather than
+deleted because "we last saw it here, eighteen minutes ago" is useful and
+silence is not.
+
+#### Nothing is inferred
+
+A position comes from the node's own `LocationProvider` or not at all. IP
+addresses, transport peer IDs, mDNS records and network topology describe where
+a packet came from, not where a device is. The map still refuses to place a peer
+at the coordinates of an incident it authored.
+
+Direct peers only. There is no relay and no rebroadcast, so there is no storm to
+cause. The message is shaped so relaying could be added later without changing
+what it means.
+
+---
+
 ## 6d. Operational knowledge (IMPLEMENTED)
 
 ```text

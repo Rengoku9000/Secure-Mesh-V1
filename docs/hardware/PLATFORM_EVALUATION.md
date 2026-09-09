@@ -1,4 +1,3 @@
-# SecureMesh — Phase 4A Platform Feasibility Study
 
 **Status: study only. Nothing here has been built, bought, flashed, or measured.**
 
