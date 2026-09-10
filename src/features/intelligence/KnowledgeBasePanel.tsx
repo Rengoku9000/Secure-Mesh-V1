@@ -3,9 +3,15 @@ import { Panel } from "../../components/Panel";
 import {
   CoreError,
   getKnowledgeSummary,
+  getKnowledgeDocuments,
   installOperationalKnowledge,
+  indexIntelligence,
 } from "../../lib/ipc";
-import type { IntelligenceStatus, KnowledgeBaseSummary } from "../../types/core";
+import type {
+  IntelligenceStatus,
+  KnowledgeBaseSummary,
+  KnowledgeDocument,
+} from "../../types/core";
 
 interface KnowledgeBasePanelProps {
   status: IntelligenceStatus | null;
@@ -20,24 +26,24 @@ interface KnowledgeBasePanelProps {
  * thing: operational documents are stable field guidance provisioned onto the
  * device, and incidents are dynamic reports that arrive as events. Retrieval
  * searches both, and an answer may cite both.
- *
- * Everything here is local. The install button copies documents that are
- * already inside the binary into the index; it opens no connection and reads no
- * file, so it works identically with the network unplugged.
  */
 export function KnowledgeBasePanel({ status, onChanged }: KnowledgeBasePanelProps) {
   const [summary, setSummary] = useState<KnowledgeBaseSummary | null>(null);
+  const [docs, setDocs] = useState<KnowledgeDocument[]>([]);
   const [installing, setInstalling] = useState(false);
+  const [indexing, setIndexing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setSummary(await getKnowledgeSummary());
+      const [sum, documents] = await Promise.all([
+        getKnowledgeSummary(),
+        getKnowledgeDocuments().catch(() => []),
+      ]);
+      setSummary(sum);
+      setDocs(documents);
     } catch {
-      // A node with no model still returns a summary, so a failure here is a
-      // genuine fault rather than an expected absence. The panel degrades to
-      // its loading shape rather than taking the dashboard down with it.
       setSummary(null);
     }
   }, []);
@@ -69,9 +75,28 @@ export function KnowledgeBasePanel({ status, onChanged }: KnowledgeBasePanelProp
     }
   }
 
+  async function handleTriggerIndex() {
+    setIndexing(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const report = await indexIntelligence();
+      setMessage(
+        `Index reconciliation complete: ${report.chunksEmbedded} chunks and ${report.incidentsEmbedded} incidents newly embedded (${report.failures} failures).`,
+      );
+      await refresh();
+      onChanged();
+    } catch (raw) {
+      const coreError = raw as CoreError;
+      setError(coreError.message ?? "Failed to re-index knowledge.");
+    } finally {
+      setIndexing(false);
+    }
+  }
+
   if (!summary) {
     return (
-      <Panel title="Knowledge base">
+      <Panel title="Knowledge Base & Protocols">
         <div className="key-value" aria-busy="true">
           <div className="skeleton skeleton--line" />
           <div className="skeleton skeleton--line" />
@@ -84,78 +109,117 @@ export function KnowledgeBasePanel({ status, onChanged }: KnowledgeBasePanelProp
   const indexingBehind = summary.liveIncidentsTotal > summary.liveIncidentsIndexed;
 
   return (
-    <Panel title="Knowledge base" subtitle="Local knowledge · nothing is fetched">
-      <dl className="key-value">
-        <div className="key-value__row">
-          <dt className="key-value__key">Operational documents</dt>
-          <dd className="key-value__value">
-            {summary.operationalDocuments} of {summary.packDocumentsAvailable}
-          </dd>
+    <Panel
+      title="Knowledge Base & Field Protocols"
+      subtitle="Air-gapped documents & vector retrieval corpus"
+    >
+      <div className="intel-card">
+        {/* Knowledge corpus metrics */}
+        <div className="intel-metric-grid">
+          <div className="intel-metric-box">
+            <span className="intel-metric-box__val">
+              {summary.operationalDocuments} / {summary.packDocumentsAvailable}
+            </span>
+            <span className="intel-metric-box__lbl">Manuals</span>
+          </div>
+
+          <div className="intel-metric-box">
+            <span className="intel-metric-box__val">
+              {summary.liveIncidentsIndexed} / {summary.liveIncidentsTotal}
+            </span>
+            <span className="intel-metric-box__lbl">
+              {indexingBehind ? "Indexed (Syncing...)" : "Indexed Reports"}
+            </span>
+          </div>
+
+          <div className="intel-metric-box">
+            <span className="intel-metric-box__val">{summary.chunks}</span>
+            <span className="intel-metric-box__lbl">Passage Chunks</span>
+          </div>
+
+          <div className="intel-metric-box">
+            <span className="intel-metric-box__val">{summary.vectors}</span>
+            <span className="intel-metric-box__lbl">Vectors</span>
+          </div>
         </div>
 
-        {summary.importedDocuments > 0 && (
-          <div className="key-value__row">
-            <dt className="key-value__key">Imported documents</dt>
-            <dd className="key-value__value">{summary.importedDocuments}</dd>
+        {/* Installed Documents Listing */}
+        {docs.length > 0 && (
+          <div>
+            <h4
+              style={{
+                fontSize: "11px",
+                fontWeight: 600,
+                letterSpacing: "var(--tracking-wider)",
+                textTransform: "uppercase",
+                color: "var(--text-muted)",
+                marginBottom: "8px",
+              }}
+            >
+              Installed Operational Manuals ({docs.length})
+            </h4>
+            <div className="intel-doc-list">
+              {docs.map((doc) => (
+                <div key={doc.id} className="intel-doc-item">
+                  <div className="intel-doc-info">
+                    <span className="intel-doc-title" title={doc.title}>
+                      {doc.title}
+                    </span>
+                    <span className="intel-doc-meta">
+                      {doc.sourceType} · {doc.chunkCount} vector chunk{doc.chunkCount === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <span className="intel-doc-badge">EMBEDDED</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        <div className="key-value__row">
-          <dt className="key-value__key">Live incidents</dt>
-          <dd className="key-value__value">
-            {summary.liveIncidentsIndexed}
-            {/* Stated rather than hidden: an incident with no vector is not
-                retrievable yet, and silently counting it as searchable would
-                misdescribe what a question can actually find. */}
-            {indexingBehind && ` indexed · ${summary.liveIncidentsTotal} held`}
-          </dd>
+        {/* Action Controls */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "4px" }}>
+          <button
+            type="button"
+            className="button button--secondary button--compact"
+            onClick={() => void install()}
+            disabled={installing || !modelReady}
+          >
+            {installing
+              ? "Installing…"
+              : summary.packInstalled
+                ? "Re-install Operational Protocols"
+                : "Install Operational Protocols"}
+          </button>
+
+          <button
+            type="button"
+            className="button button--secondary button--compact"
+            onClick={() => void handleTriggerIndex()}
+            disabled={indexing || !modelReady}
+            title="Force immediate embedding pass on any pending incident reports or chunks"
+          >
+            {indexing ? "Indexing…" : "Run Vector Indexer"}
+          </button>
         </div>
 
-        <div className="key-value__row">
-          <dt className="key-value__key">Chunks</dt>
-          <dd className="key-value__value">{summary.chunks}</dd>
-        </div>
+        {message && <p className="intelligence-detail" style={{ color: "var(--accent)" }}>{message}</p>}
+        {error && (
+          <div className="alert" role="alert">
+            <div className="alert__body">{error}</div>
+          </div>
+        )}
 
-        <div className="key-value__row">
-          <dt className="key-value__key">Vectors</dt>
-          <dd className="key-value__value">{summary.vectors}</dd>
-        </div>
-      </dl>
+        {!modelReady && (
+          <p className="intelligence-detail">
+            Installing operational manuals requires the local embedding engine to be loaded so chunks can be indexed immediately.
+          </p>
+        )}
 
-      <div className="knowledge-actions">
-        <button
-          type="button"
-          className="button button--secondary button--compact"
-          onClick={() => void install()}
-          disabled={installing || !modelReady}
-        >
-          {installing
-            ? "Installing…"
-            : summary.packInstalled
-              ? "Reinstall operational knowledge"
-              : "Install operational knowledge"}
-        </button>
-      </div>
-
-      {message && <p className="intelligence-detail">{message}</p>}
-      {error && (
-        <div className="alert" role="alert">
-          <div className="alert__body">{error}</div>
-        </div>
-      )}
-
-      {!modelReady && (
-        <p className="intelligence-detail">
-          Installing needs the local embedding model, because a document that
-          cannot be embedded is not something this node could retrieve.
+        <p className="intelligence-detail intelligence-detail--reassurance">
+          Operational field documents are compiled directly into this binary. Adding or indexing them copies text strictly on this local device without external requests.
         </p>
-      )}
-
-      <p className="intelligence-detail intelligence-detail--reassurance">
-        The operational documents are compiled into this application. Installing
-        them copies text that is already on this device into the local index —
-        no download, no API, no network of any kind.
-      </p>
+      </div>
     </Panel>
   );
 }
+

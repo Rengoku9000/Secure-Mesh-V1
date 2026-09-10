@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "../components/Alert";
 import { BottomNav, type NavTab } from "../components/BottomNav";
 import { Panel } from "../components/Panel";
+import { EncryptedId } from "../components/EncryptedId";
 import { NodeHeader } from "../features/dashboard/NodeHeader";
 import { NodeIdentityPanel } from "../features/dashboard/NodeIdentityPanel";
 import { SystemStatusPanel } from "../features/dashboard/SystemStatusPanel";
@@ -9,7 +10,6 @@ import { CreateIncidentDialog } from "../features/incidents/CreateIncidentDialog
 import { IncidentCard } from "../features/incidents/IncidentCard";
 import { IncidentDetailsDialog } from "../features/incidents/IncidentDetailsDialog";
 import { TacticalMap } from "../features/map/TacticalMap";
-import { AskSecureMesh } from "../features/intelligence/AskSecureMesh";
 import { AskAiDrawer } from "../features/intelligence/AskAiDrawer";
 import { IntelligencePanel } from "../features/intelligence/IntelligencePanel";
 import { KnowledgeBasePanel } from "../features/intelligence/KnowledgeBasePanel";
@@ -26,7 +26,8 @@ import {
   getPeers,
   getSystemStatus,
 } from "../lib/ipc";
-import { formatRelative, shortenId } from "../lib/format";
+import { formatRelative } from "../lib/format";
+import { useLocalAnnotations, type DisputeReason } from "../lib/localAnnotations";
 import type {
   Incident,
   IncidentIndexState,
@@ -60,6 +61,14 @@ export function DashboardPage() {
   const [selected, setSelected] = useState<Incident | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
+
+  // Edit node name dialog state
+  const [editNameOpen, setEditNameOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
+
+  const { callSign, setCallSign, disputeFor, flagIncident, clearFlag } =
+    useLocalAnnotations();
 
   // Global Ctrl+K / Cmd+K listener to toggle Ask SecureMesh AI drawer from anywhere
   useEffect(() => {
@@ -188,12 +197,44 @@ export function DashboardPage() {
     setActiveTab("map");
   }, []);
 
+  // The call sign sits beside the node's real name rather than replacing it:
+  // `identity.nodeName` is what peers see and stays exactly as the keystore
+  // recorded it.
+  const handleOpenEditName = useCallback(() => {
+    setNewName(callSign ?? "");
+    setNameError(null);
+    setEditNameOpen(true);
+  }, [callSign]);
+
+  const handleSaveName = useCallback(() => {
+    const trimmed = newName.trim();
+    if (trimmed.length > 32) {
+      setNameError("Call sign cannot exceed 32 characters");
+      return;
+    }
+    // Empty clears the call sign and falls back to the node's own name.
+    setNameError(null);
+    setCallSign(trimmed === "" ? null : trimmed);
+    setEditNameOpen(false);
+  }, [newName, setCallSign]);
+
+  // Reports are evidence. One that turns out to be wrong is marked with this
+  // node's own assessment and kept, rather than deleted.
+  const handleFlagIncident = useCallback(
+    (id: string, reason: DisputeReason, note?: string) => {
+      flagIncident(id, reason, note);
+    },
+    [flagIncident],
+  );
+
   return (
     <div className="mobile-app-shell">
       <NodeHeader
         identity={identity}
         network={network}
         onOpenAi={() => setAiDrawerOpen(true)}
+        onEditName={handleOpenEditName}
+        callSign={callSign}
       />
 
       <main className="mobile-main">
@@ -276,7 +317,7 @@ export function DashboardPage() {
                     {selected.severity}
                   </span>
                   <span className="map-selected-card__id">
-                    {shortenId(selected.id, 6, 4)}
+                    <EncryptedId id={selected.id} lead={6} tail={4} />
                   </span>
                   <span className="map-selected-card__time">
                     {formatRelative(selected.createdAt)}
@@ -436,6 +477,7 @@ export function DashboardPage() {
                     key={incident.id}
                     incident={incident}
                     indexState={indexStateMap.get(incident.id)}
+                    dispute={disputeFor(incident.id)}
                     isSelected={selected?.id === incident.id}
                     onSelect={(inc) => {
                       setSelected(inc);
@@ -474,12 +516,38 @@ export function DashboardPage() {
         {activeTab === "intel" && (
           <div className="mobile-view mobile-view--scrollable">
             <div className="mobile-section-header">
-              <h2 className="mobile-section-title">Field Intelligence</h2>
-              <span className="mobile-section-subtitle">On-device edge inference & manuals</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", width: "100%" }}>
+                <div>
+                  <h2 className="mobile-section-title">Field Intelligence & Protocols</h2>
+                  <span className="mobile-section-subtitle">On-device edge inference, vectors & manuals</span>
+                </div>
+                <button
+                  type="button"
+                  className="button button--primary button--compact"
+                  onClick={() => setAiDrawerOpen(true)}
+                  title="Ask SecureMesh AI (Ctrl+K)"
+                  style={{ gap: "6px" }}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  <span>Query AI (Ctrl+K)</span>
+                </button>
+              </div>
             </div>
 
             <div className="mobile-panel-stack">
-              <AskSecureMesh status={intelligence} />
               <IntelligencePanel status={intelligence} />
               <KnowledgeBasePanel
                 status={intelligence}
@@ -498,7 +566,11 @@ export function DashboardPage() {
             </div>
 
             <div className="mobile-panel-stack">
-              <NodeIdentityPanel identity={identity} />
+              <NodeIdentityPanel
+                identity={identity}
+                onEditName={handleOpenEditName}
+                callSign={callSign}
+              />
               <SystemStatusPanel status={systemStatus} />
 
               <Panel title="Edge Transport & Protocol">
@@ -575,7 +647,94 @@ export function DashboardPage() {
           incident={incidents.find((item) => item.id === selected.id) ?? selected}
           onClose={() => setDetailsOpen(false)}
           onLocateOnMap={handleLocateOnMap}
+          dispute={disputeFor(selected.id)}
+          onFlag={handleFlagIncident}
+          onClearFlag={clearFlag}
         />
+      )}
+
+      {/* Edit Node Display Name / Alias Dialog */}
+      {editNameOpen && (
+        <div
+          className="dialog-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-node-name-title"
+          onClick={() => setEditNameOpen(false)}
+        >
+          <div
+            className="dialog"
+            style={{ maxWidth: "420px" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="dialog__header">
+              <h2 id="edit-node-name-title" className="dialog__title">
+                Set Local Call Sign
+              </h2>
+              <button
+                type="button"
+                className="dialog__close-btn"
+                onClick={() => setEditNameOpen(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </header>
+
+            <div className="dialog__body">
+              <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "14px", lineHeight: "1.4" }}>
+                A call sign for your own reference on this device. The node's
+                registered name and its cryptographic Node ID are unchanged, and
+                peers continue to see the node exactly as before. Leave blank to
+                clear it.
+              </p>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSaveName();
+                }}
+              >
+                <div className="field">
+                  <label htmlFor="node-name-input" className="field__label">
+                    Call sign
+                  </label>
+                  <span className="field__hint">
+                    Registered as {identity?.nodeName ?? "unknown"}
+                  </span>
+                  <input
+                    id="node-name-input"
+                    type="text"
+                    className="input"
+                    value={newName}
+                    maxLength={32}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="e.g. ALPHA-BASE-01"
+                    autoFocus
+                  />
+                  {nameError && (
+                    <span style={{ color: "var(--danger-fg)", fontSize: "12px", marginTop: "4px" }}>
+                      {nameError}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "20px" }}>
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    onClick={() => setEditNameOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="button button--primary">
+                    {newName.trim() ? "Save call sign" : "Clear call sign"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Global Slide-Over Tactical AI Drawer */}

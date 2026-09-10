@@ -2,13 +2,17 @@ import { useEffect, useRef } from "react";
 import { IndexStateBadge } from "../../components/IndexStateBadge";
 import { SeverityBadge } from "../../components/SeverityBadge";
 import { SyncStatusBadge } from "../../components/SyncStatusBadge";
+import { EncryptedId } from "../../components/EncryptedId";
 import { formatAccuracy, formatLocation, formatRelative, shortenId } from "../../lib/format";
 import type { Incident, IndexState } from "../../types/core";
+import { DISPUTE_LABELS, type Dispute } from "../../lib/localAnnotations";
 
 interface IncidentCardProps {
   incident: Incident;
   indexState?: IndexState;
   isSelected?: boolean;
+  /** This node's own dispute against the report, if one was raised. */
+  dispute?: Dispute | null;
   onSelect: (incident: Incident) => void;
   onLocateOnMap?: (incident: Incident) => void;
 }
@@ -21,6 +25,7 @@ export function IncidentCard({
   incident,
   indexState,
   isSelected = false,
+  dispute,
   onSelect,
   onLocateOnMap,
 }: IncidentCardProps) {
@@ -53,7 +58,7 @@ export function IncidentCard({
       <div className="ixigo-transit-card__top">
         <div className="ixigo-transit-card__id-badge">
           <span className="ixigo-transit-card__hash">#</span>
-          <span>{shortenId(incident.id, 6, 4)}</span>
+          <EncryptedId id={incident.id} lead={6} tail={4} />
         </div>
 
         <SeverityBadge severity={incident.severity} />
@@ -67,6 +72,19 @@ export function IncidentCard({
 
         <div className="ixigo-transit-card__sync-wrapper">
           <SyncStatusBadge status={incident.syncStatus} />
+          {dispute && (
+            <span
+              className="badge"
+              title={dispute.note ?? DISPUTE_LABELS[dispute.reason]}
+              style={{
+                background: "var(--warning-bg, var(--danger-bg))",
+                color: "var(--warning-fg, var(--danger-fg))",
+                border: "1px solid var(--warning-border, var(--danger-border))",
+              }}
+            >
+              Flagged · {DISPUTE_LABELS[dispute.reason]}
+            </span>
+          )}
           <time className="ixigo-transit-card__time" dateTime={incident.createdAt}>
             {formatRelative(incident.createdAt)}
           </time>

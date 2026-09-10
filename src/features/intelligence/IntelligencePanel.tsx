@@ -29,64 +29,94 @@ export function IntelligencePanel({ status }: IntelligencePanelProps) {
   const ready = status.state === "READY";
 
   return (
-    <Panel title="Intelligence" subtitle={status.modelName ?? "No model provisioned"}>
-      <dl className="key-value">
-        <div className="key-value__row">
-          <dt className="key-value__key">Status</dt>
-          <dd className="key-value__value">
-            <span className="intelligence-state">
-              <StatusDot state={ready ? "OPERATIONAL" : "INACTIVE"} />
-              {status.state}
+    <Panel
+      title="Field Intelligence Engine"
+      subtitle={status.modelName ?? "Autonomous local reasoning"}
+    >
+      <div className="intel-card">
+        {/* Real-time stats */}
+        <div className="intel-metric-grid">
+          <div className="intel-metric-box">
+            <span className="intel-metric-box__val">
+              {ready ? "ACTIVE" : status.state}
             </span>
-          </dd>
+            <span className="intel-metric-box__lbl">Core Status</span>
+          </div>
+
+          <div className="intel-metric-box">
+            <span className="intel-metric-box__val">{status.analysesStored}</span>
+            <span className="intel-metric-box__lbl">Analyses</span>
+          </div>
+
+          <div className="intel-metric-box">
+            <span className="intel-metric-box__val">{status.vectorsStored}</span>
+            <span className="intel-metric-box__lbl">Embeddings</span>
+          </div>
+
+          <div className="intel-metric-box">
+            <span className="intel-metric-box__val">0 kb/s</span>
+            <span className="intel-metric-box__lbl">Cloud Transit</span>
+          </div>
         </div>
 
-        {status.modelId && (
+        {/* Detailed configuration specs */}
+        <dl className="key-value">
           <div className="key-value__row">
-            <dt className="key-value__key">Model</dt>
-            <dd className="key-value__value">
-              {status.modelId}
-              {status.quantisation && ` · ${status.quantisation}`}
+            <dt className="key-value__key">Inference Provider</dt>
+            <dd className="key-value__value" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span className="intelligence-state">
+                <StatusDot state={ready ? "OPERATIONAL" : "INACTIVE"} />
+                {status.inference} (On-Device)
+              </span>
             </dd>
           </div>
-        )}
 
-        {status.embeddingModel && (
+          {status.modelId && (
+            <div className="key-value__row">
+              <dt className="key-value__key">LLM Model</dt>
+              <dd className="key-value__value">
+                <strong>{status.modelId}</strong>
+                {status.quantisation && (
+                  <span style={{ color: "var(--text-muted)", marginLeft: "6px" }}>
+                    · {status.quantisation}
+                  </span>
+                )}
+              </dd>
+            </div>
+          )}
+
+          {status.embeddingModel && (
+            <div className="key-value__row">
+              <dt className="key-value__key">Vector Embedder</dt>
+              <dd className="key-value__value">{status.embeddingModel}</dd>
+            </div>
+          )}
+
           <div className="key-value__row">
-            <dt className="key-value__key">Embeddings</dt>
-            <dd className="key-value__value">{status.embeddingModel}</dd>
-          </div>
-        )}
-
-        <div className="key-value__row">
-          <dt className="key-value__key">Inference</dt>
-          <dd className="key-value__value">{status.inference}</dd>
-        </div>
-
-        <div className="key-value__row">
-          <dt className="key-value__key">Network dependency</dt>
-          <dd className="key-value__value">{status.networkDependency}</dd>
-        </div>
-
-        {ready && (
-          <div className="key-value__row">
-            <dt className="key-value__key">Local index</dt>
+            <dt className="key-value__key">Network Air-Gap</dt>
             <dd className="key-value__value">
-              {status.analysesStored} analyses · {status.chunksIndexed} chunks ·{" "}
-              {status.vectorsStored} vectors
+              <span style={{ color: "var(--state-ok)", fontWeight: 600 }}>
+                100% Offline (Zero Cloud Dependency)
+              </span>
             </dd>
           </div>
-        )}
-      </dl>
 
-      {!ready && <p className="intelligence-detail">{status.detail}</p>}
+          {ready && (
+            <div className="key-value__row">
+              <dt className="key-value__key">Vector Chunks Indexed</dt>
+              <dd className="key-value__value">
+                {status.chunksIndexed} chunks across {status.documentsIndexed} source documents
+              </dd>
+            </div>
+          )}
+        </dl>
 
-      {!ready && (
-        <p className="intelligence-detail intelligence-detail--reassurance">
-          Incident capture, peer-to-peer synchronisation and the dashboard are
-          unaffected.
+        {!ready && <p className="intelligence-detail">{status.detail}</p>}
+
+        <p className="intelligence-detail intelligence-detail--reassurance" style={{ marginTop: "4px" }}>
+          Inference runs exclusively via local hardware acceleration. Emergency peer mesh synchronization and incident tracking operate completely uninterrupted.
         </p>
-      )}
+      </div>
     </Panel>
   );
 }

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Panel } from "../../components/Panel";
 import { StatusDot } from "../../components/StatusDot";
-import { formatRelative, shortenId } from "../../lib/format";
+import { EncryptedId } from "../../components/EncryptedId";
+import { formatRelative } from "../../lib/format";
 import { approvePeer, CoreError, rejectPeer, revokePeer } from "../../lib/ipc";
 import type {
   LocalAuthority,
@@ -69,7 +70,7 @@ function PeerRow({ peer, authority, busy, onDecision }: PeerRowProps) {
         <span className="peer-row__name" title={`Node ID: ${peer.nodeId}`}>
           {peer.nodeName}
         </span>
-        <span className="peer-row__id mono">{shortenId(peer.nodeId, 8, 4)}</span>
+        <EncryptedId id={peer.nodeId} lead={8} tail={4} type="node" />
       </div>
 
       <div className="peer-row__badges">

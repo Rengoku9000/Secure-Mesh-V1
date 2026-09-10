@@ -1,6 +1,7 @@
 import { IndexStateBadge } from "../../components/IndexStateBadge";
 import { SeverityBadge } from "../../components/SeverityBadge";
 import { SyncStatusBadge } from "../../components/SyncStatusBadge";
+import { EncryptedId } from "../../components/EncryptedId";
 import {
   formatAccuracy,
   formatLocation,
@@ -102,8 +103,8 @@ export function IncidentTable({
                 }
               }}
             >
-              <td className="incident-table__id" title={incident.id}>
-                {shortenId(incident.id, 8, 4)}
+              <td className="incident-table__id">
+                <EncryptedId id={incident.id} lead={8} tail={4} />
               </td>
               <td>
                 <SeverityBadge severity={incident.severity} />

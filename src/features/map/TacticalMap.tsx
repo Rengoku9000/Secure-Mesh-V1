@@ -727,13 +727,13 @@ export function TacticalMap({
               const isSelected = selected?.id === marker.incidentId;
               return (
                 <g key={marker.incidentId} className="map__incident-item">
+                  {/* Transparent expanded hit target for smooth, responsive hover */}
                   <circle
-                    className={`map__incident${isSelected ? " map__incident--selected" : ""}`}
                     cx={point.x}
                     cy={point.y}
-                    r={SEVERITY_RADIUS[marker.severity]}
-                    style={{ fill: SEVERITY_TOKEN[marker.severity] }}
-                    filter={isSelected ? "url(#map-pin-glow)" : "url(#map-pin-shadow)"}
+                    r={Math.max(14, SEVERITY_RADIUS[marker.severity] + 6)}
+                    fill="transparent"
+                    pointerEvents="all"
                     role="button"
                     tabIndex={0}
                     aria-label={`Incident ${marker.severity}: ${marker.incident.description}`}
@@ -745,6 +745,15 @@ export function TacticalMap({
                         onSelect(marker.incident);
                       }
                     }}
+                  />
+                  <circle
+                    className={`map__incident${isSelected ? " map__incident--selected" : ""}`}
+                    cx={point.x}
+                    cy={point.y}
+                    r={SEVERITY_RADIUS[marker.severity]}
+                    style={{ fill: SEVERITY_TOKEN[marker.severity] }}
+                    filter={isSelected ? "url(#map-pin-glow)" : "url(#map-pin-shadow)"}
+                    pointerEvents="none"
                   />
                   {/* Inner white pip for crisp target precision */}
                   <circle

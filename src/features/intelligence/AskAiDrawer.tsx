@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type FormEvent } from "react";
+import { QwenIcon } from "../../components/QwenIcon";
 import { askSecureMesh, CoreError } from "../../lib/ipc";
 import type {
   GroundedAnswer,
@@ -130,10 +131,7 @@ export function AskAiDrawer({
         <div className="ai-drawer__header">
           <div className="ai-drawer__brand">
             <div className="ai-drawer__icon" aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83" />
-                <circle cx="12" cy="12" r="3" fill="currentColor" opacity="0.4" />
-              </svg>
+              <QwenIcon size={18} />
             </div>
             <div>
               <h2 className="ai-drawer__title">SecureMesh AI</h2>
@@ -275,7 +273,7 @@ export function AskAiDrawer({
                     onClick={() => handlePromptClick(prompt)}
                     disabled={!ready || asking}
                   >
-                    <span style={{ color: "var(--accent)" }}>✦</span>
+                    <QwenIcon size={12} style={{ flexShrink: 0, color: "var(--accent)" }} />
                     <span>{prompt}</span>
                   </button>
                 ))}
