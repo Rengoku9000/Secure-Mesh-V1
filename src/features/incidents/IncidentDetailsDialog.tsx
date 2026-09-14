@@ -3,7 +3,12 @@ import { SeverityBadge } from "../../components/SeverityBadge";
 import { SyncStatusBadge } from "../../components/SyncStatusBadge";
 import { EncryptedId } from "../../components/EncryptedId";
 import { formatAccuracy, formatTimestamp } from "../../lib/format";
-import type { Incident, IncidentLocationSource } from "../../types/core";
+import type {
+  Incident,
+  IncidentLocationSource,
+  IntelligenceStatus,
+} from "../../types/core";
+import { IncidentInsightView } from "../intelligence/IncidentInsightView";
 import {
   DISPUTE_LABELS,
   type Dispute,
@@ -48,6 +53,10 @@ interface IncidentDetailsDialogProps {
   dispute?: Dispute | null;
   onFlag?: (incidentId: string, reason: DisputeReason, note?: string) => void;
   onClearFlag?: (incidentId: string) => void;
+  /** Local model status, for the optional model analysis. */
+  intelligence?: IntelligenceStatus | null;
+  /** Opens another incident, for following a related report. */
+  onOpenIncident?: (incidentId: string) => void;
 }
 
 /**
@@ -65,6 +74,8 @@ export function IncidentDetailsDialog({
   dispute,
   onFlag,
   onClearFlag,
+  intelligence = null,
+  onOpenIncident,
 }: IncidentDetailsDialogProps) {
   const [flagOpen, setFlagOpen] = useState(false);
   const [flagReason, setFlagReason] = useState<DisputeReason>("INCORRECT");
@@ -292,6 +303,12 @@ export function IncidentDetailsDialog({
               </>
             )}
           </div>
+
+          <IncidentInsightView
+            incident={incident}
+            status={intelligence}
+            onOpenIncident={onOpenIncident}
+          />
 
           {onFlag && (
             <div

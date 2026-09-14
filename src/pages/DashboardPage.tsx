@@ -650,6 +650,11 @@ export function DashboardPage() {
           dispute={disputeFor(selected.id)}
           onFlag={handleFlagIncident}
           onClearFlag={clearFlag}
+          intelligence={intelligence}
+          onOpenIncident={(incidentId) => {
+            const next = incidents.find((item) => item.id === incidentId);
+            if (next) setSelected(next);
+          }}
         />
       )}
 

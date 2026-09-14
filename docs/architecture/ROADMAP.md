@@ -153,6 +153,12 @@ meant building that twice.
 | Retrieval + grounded generation with citations | ✅ Citation is a **required schema field**, then verified against the passages supplied |
 | Openly licensed, non-sensitive corpus | ✅ Deterministic synthetic generator, labelled `SYNTHETIC` in storage |
 | Measured evaluation | ✅ `docs/ai/EVALUATION.md` |
+| Deterministic rule layer (`ai/nlp.rs`): hazards, people, locations, routes, explainable severity | ✅ No model needed; microseconds per report |
+| Incident insight (`ai/insight.rs`): category choice, related/duplicate detection, severity factors | ✅ Semantic when a vector exists, lexical fallback otherwise |
+| Situation brief: cross-incident digest with optional grounded summary | ✅ Backend and IPC (`get_situation_brief`) done; **no dashboard UI consumer yet** |
+| Bounded concurrency gate (`ai/gate.rs`) for the generation model | ✅ One request runs, a few queue briefly, the rest refuse immediately |
+| Model-reaching commands moved off the Tauri main thread | ✅ `#[tauri::command(async)]` |
+| Duplicate/related similarity thresholds calibrated against measured data | ❌ **Not done** — measured bands show most true duplicates land in `RELATED`, not `DUPLICATE`; see `docs/ai/EVALUATION.md` |
 
 **Constraint held:** the "AI" status row reports truthfully. A node with no
 model reports why, and keeps working.

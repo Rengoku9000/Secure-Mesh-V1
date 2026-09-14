@@ -213,6 +213,22 @@ export function indexIntelligence(): Promise<IndexReport> {
   return call<IndexReport>("index_intelligence");
 }
 
+/**
+ * Derived insight for one incident: extracted facts, category, severity with
+ * reasons, and related reports. Works without a model; read-only.
+ */
+export function getIncidentInsight(incidentId: string): Promise<IncidentInsight> {
+  return call<IncidentInsight>("get_incident_insight", { incidentId });
+}
+
+/**
+ * A situation digest across local incidents. With `summarise`, the local model
+ * also writes a short summary of the figures, withheld if unsupported.
+ */
+export function getSituationBrief(summarise = false): Promise<SituationBrief> {
+  return call<SituationBrief>("get_situation_brief", { summarise });
+}
+
 /** Where each incident stands in the local vector index. */
 export function getIncidentIndexStates(): Promise<IncidentIndexState[]> {
   return call<IncidentIndexState[]>("get_incident_index_states");

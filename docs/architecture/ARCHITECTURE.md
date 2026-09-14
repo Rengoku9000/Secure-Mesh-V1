@@ -490,6 +490,42 @@ incident creation or synchronisation. A node with no model, or a crashed
 runtime, keeps capturing and replicating incidents and reports intelligence as
 unavailable. `tests/ai_boundary.rs` asserts this.
 
+### 6.8 Incident insight and the situation brief
+
+`ai/nlp.rs` is a deterministic rule layer — hazard cues, people counts and
+status, locations, routes, and an explainable severity score — that reads a
+report in microseconds with no model loaded. `ai/insight.rs` is pure on top of
+it: handed incidents, extractions and whatever vectors exist, it returns
+category choice, related/duplicate matches, and severity factors, reading no
+database and calling no model itself. Nothing either produces is stored or
+replicated; two nodes may derive different insights about the same incident,
+which is why none of it goes on the wire (§6.4 applies here too).
+
+Related-report matching degrades rather than disappears: semantic (embedding
+cosine) when a vector exists, lexical (stemmed word and hazard-set overlap)
+when it does not, with each threshold band tuned independently for its method.
+See `docs/ai/EVALUATION.md` for the measured similarity bands — the current
+duplicate/possible/related cut points are not yet calibrated against them.
+
+The situation brief (`insight::build_brief`) aggregates every incident a node
+holds — counts, summed people totals, blocked routes, a priority ranking, and
+duplicate groups — with no model call. A prose summary is optional and, when
+asked for, is generated *from the brief's own figures only* and then checked
+by the same containment method §6.6 uses for grounded answers: a summary that
+is not supported by the figures it was given is withheld and the reason
+stated, never shown.
+
+### 6.9 A gate in front of the generation model
+
+The generation runtime is one CPU-bound process; two requests in flight finish
+no sooner and both finish late. `ai/gate.rs` (`InferenceGate`) admits one
+request, lets a bounded few queue briefly, and refuses the rest immediately
+with a message that says why. It guards only the generation model — embedding
+is milliseconds with its own process, and nothing on the incident-capture or
+sync path acquires it — so a full queue can delay a *question*, never a
+record. Every Tauri command that can reach a model is `#[tauri::command(async)]`
+so a multi-second wait runs on Tauri's thread pool instead of the UI thread.
+
 ## 6b. Original Phase 3 design notes (superseded)
 
 ```
@@ -1063,11 +1099,16 @@ src-tauri/              Rust core
   src/domain/           Incident/node types and their invariants
   src/storage/          SQLite, migrations, repositories
   src/security/         Secret<N>, audit
+  src/ai/               Local inference, embedding, RAG, rule layer, insight,
+                        situation brief, and the generation-model gate
   migrations/           Versioned SQL
   tests/                Integration tests
+  examples/             Standalone measurement harnesses (`run_benchmark`,
+                        `nlp_evaluation`) — not part of the shipped binary
 
 docs/architecture/      This file, ROADMAP.md
 docs/security/          SECURITY.md
+docs/ai/                PROVISIONING.md, EVALUATION.md
 docs/demo/              DEMO.md
 ```
 
@@ -1075,6 +1116,6 @@ Rust integration tests live in `src-tauri/tests/` rather than a top-level
 `tests/` directory, because Cargo requires them to sit beside the crate they
 exercise.
 
-Directories for `ai/`, `data/`, and `hardware/` are intentionally **not** created
-yet. They will be added when the phase that needs them begins, rather than
-standing empty.
+Directories for `data/` and `hardware/` are intentionally **not** created yet.
+They will be added when the phase that needs them begins, rather than standing
+empty.

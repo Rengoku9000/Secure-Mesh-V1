@@ -99,6 +99,8 @@ pub fn run() {
             commands::get_map_geojson,
             commands::get_knowledge_summary,
             commands::install_operational_knowledge,
+            commands::get_incident_insight,
+            commands::get_situation_brief,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

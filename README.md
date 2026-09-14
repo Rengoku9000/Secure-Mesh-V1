@@ -162,7 +162,7 @@ The first build compiles the Rust core and takes several minutes.
 
 ```bash
 cd src-tauri
-cargo test            # 315 tests: 236 unit + 79 integration
+cargo test            # 701 tests: 493 unit + 208 integration
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
@@ -271,6 +271,32 @@ Deleting the directory resets the node to a first launch.
   replicating and serving; it reports intelligence as unavailable
 - The model never overwrites an operator's judgement — its severity is stored
   beside theirs, and disagreement is surfaced
+- **A deterministic rule layer reads every report in microseconds, with no
+  model loaded.** Hazard cues, people counts and status, locations, routes,
+  and an explainable severity score with the factors behind it — all derived,
+  advisory, and never written over the report. Measured on the held-out set:
+  **69.4%** category accuracy from rules alone, **83.3%** combined with the
+  semantic fallback below. See [`docs/ai/EVALUATION.md`](docs/ai/EVALUATION.md)
+- **Related and duplicate reports surface automatically**, by embedding
+  similarity when a model is provisioned and by word/hazard overlap when it is
+  not — so the same behaviour degrades rather than disappears. **The
+  similarity thresholds are not yet calibrated against measured data**: on the
+  hand-labelled pairs, most genuine duplicates score in the `RELATED` band, not
+  `DUPLICATE`. Recorded as an open item, not silently shipped — see
+  [`docs/ai/EVALUATION.md`](docs/ai/EVALUATION.md)
+- **A situation brief aggregates every incident this node holds** — counts by
+  category and severity, people totals (summed, with duplicates called out
+  separately), blocked routes, and a priority ranking — computed with no
+  model, and available over IPC (`get_situation_brief`). A prose summary can
+  be requested from the model on top of these figures; it is withheld, not
+  shown, if it is not supported by the figures it was given
+- **A bounded queue, not an open door, in front of the generation model.** One
+  request runs, a few wait briefly, the rest are refused immediately with a
+  reason — because the model is one CPU-bound process and a queue backing up
+  would only delay every request, never speed one up. Incident capture and
+  sync never touch this gate
+- **Every command that can reach a model runs off the Tauri main thread**, so
+  a multi-second analysis or answer does not freeze the window
 
 **Device location**
 

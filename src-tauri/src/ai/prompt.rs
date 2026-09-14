@@ -119,6 +119,63 @@ pub fn analysis_user_message(description: &str) -> String {
     fence_report(description)
 }
 
+/// Builds the user message with the rule layer's findings appended.
+///
+/// The facts are derived from the same untrusted report, so they are placed
+/// *after* the fence, labelled as fallible, and stripped of anything that
+/// could read as a fence marker. The report stays authoritative.
+pub fn analysis_user_message_with_facts(description: &str, facts: &str) -> String {
+    let cleaned: String = facts
+        .replace("<<<", "")
+        .replace(">>>", "")
+        .chars()
+        .take(400)
+        .collect();
+    let cleaned = cleaned.trim();
+    if cleaned.is_empty() {
+        return fence_report(description);
+    }
+    format!(
+        "{}\n\nCues found in the report by a rule-based parser (may be incomplete \
+         or wrong; the report itself is authoritative): {cleaned}",
+        fence_report(description)
+    )
+}
+
+/// Instructions for summarising a situation brief.
+pub const BRIEF_SYSTEM_PROMPT: &str = "\
+You are an offline assistant for a SecureMesh emergency-response node.
+
+You will be given FACTS computed from this node's local incident records.
+Write a situation summary of at most three sentences for a field coordinator:
+what is happening, where people are most at risk, and what is blocked.
+
+Rules:
+- Use ONLY the facts given. Do not add numbers, places or events.
+- Do not give advice or procedures.
+- Be brief and factual.";
+
+/// Builds the user message for a situation summary.
+pub fn brief_user_message(context: &str) -> String {
+    let bounded: String = context
+        .replace("<<<", "")
+        .replace(">>>", "")
+        .chars()
+        .take(3_000)
+        .collect();
+    format!("FACTS:\n{}", bounded.trim())
+}
+
+/// The JSON schema a situation summary is constrained to.
+pub fn brief_schema() -> serde_json::Value {
+    json!({
+        "type": "object",
+        "properties": { "summary": { "type": "string" } },
+        "required": ["summary"],
+        "additionalProperties": false
+    })
+}
+
 /// The JSON schema an analysis is constrained to.
 ///
 /// Built from the domain enums rather than written out by hand, so a category

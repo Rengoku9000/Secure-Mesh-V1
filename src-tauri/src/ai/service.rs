@@ -18,21 +18,35 @@
 //! files the engines opened. The AI trust boundary is this struct's field list.
 
 use crate::ai::dataset;
-use crate::ai::embedding::EmbeddingEngine;
+use crate::ai::embedding::{Embedding, EmbeddingEngine};
 use crate::ai::engine::{EngineHealth, LocalInferenceEngine, StructuredRequest};
+use crate::ai::gate::{GateSnapshot, InferenceGate};
+use crate::ai::insight::{self, Candidate, IncidentInsight, SituationBrief};
 use crate::ai::knowledge_pack;
+use crate::ai::nlp::{self, TextExtraction};
 use crate::ai::prompt;
 use crate::ai::rag::{self, GroundedAnswer};
 use crate::ai::Unavailable;
-use crate::domain::{IncidentAnalysis, RawAnalysis};
+use crate::domain::{Incident, IncidentAnalysis, IncidentCategory, RawAnalysis};
 use crate::error::{CoreError, CoreResult};
 use crate::storage::intelligence::{EmbeddingKind, KnowledgeDocument};
 use crate::storage::Database;
 use serde::Serialize;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 /// Tokens allowed for one incident analysis.
 const ANALYSIS_TOKENS: u32 = 512;
+/// Tokens allowed for a situation summary: three sentences.
+const SUMMARY_TOKENS: u32 = 220;
+/// Longest stored summary, in characters.
+const MAX_SUMMARY_CHARS: usize = 800;
+/// Share of a summary's content words that must appear in the facts it was
+/// given. Below this it is drawing on the model, not the node's records.
+pub const MIN_SUMMARY_SUPPORT: f32 = 0.5;
+/// Incidents an insight compares against, newest first.
+const INSIGHT_CANDIDATES: u32 = 1_000;
 /// Chunk size, in characters, for ingested documents.
 const CHUNK_CHARS: usize = 900;
 /// Sentences repeated between adjacent chunks.
@@ -101,6 +115,10 @@ pub struct IntelligenceService {
     database: Arc<Database>,
     generator: Arc<dyn LocalInferenceEngine>,
     embedder: Arc<dyn EmbeddingEngine>,
+    /// One generation at a time, a short bounded queue, then refusal.
+    gate: InferenceGate,
+    /// Category prototype vectors for the semantic fallback, embedded once.
+    prototypes: Mutex<Option<Vec<(IncidentCategory, Embedding)>>>,
 }
 
 impl IntelligenceService {
@@ -113,7 +131,14 @@ impl IntelligenceService {
             database,
             generator,
             embedder,
+            gate: InferenceGate::default(),
+            prototypes: Mutex::new(None),
         }
+    }
+
+    /// Whether the generation model is busy, and how many requests wait.
+    pub fn gate_snapshot(&self) -> GateSnapshot {
+        self.gate.snapshot()
     }
 
     /// Current state, for the dashboard.
@@ -186,13 +211,17 @@ impl IntelligenceService {
             .map(|info| info.model_id)
             .ok_or_else(|| CoreError::from(Unavailable::Disabled))?;
 
+        // The rule layer's findings go to the model as labelled, fallible
+        // context: the model is asked to judge, not to rediscover counts.
+        let facts = nlp::facts_line(&nlp::extract(&incident.description));
         let request = StructuredRequest {
             system: prompt::analysis_system_prompt(),
-            user: prompt::analysis_user_message(&incident.description),
+            user: prompt::analysis_user_message_with_facts(&incident.description, &facts),
             schema: prompt::analysis_schema(),
             max_tokens: ANALYSIS_TOKENS,
         };
 
+        let _permit = self.gate.acquire()?;
         let started = std::time::Instant::now();
         let raw_output = self.generator.generate_structured(&request)?;
         let latency_ms = started.elapsed().as_millis() as u64;
@@ -289,6 +318,10 @@ impl IntelligenceService {
 
     /// Answers a question from this node's records only.
     pub fn ask(&self, question: &str, top_k: Option<usize>) -> CoreResult<GroundedAnswer> {
+        if question.trim().is_empty() {
+            return Err(CoreError::validation("a question cannot be empty"));
+        }
+        let _permit = self.gate.acquire()?;
         rag::answer_question(
             &self.database,
             self.embedder.as_ref(),
@@ -428,6 +461,176 @@ impl IntelligenceService {
         }
 
         Ok(imported)
+    }
+
+    // --- Insight and situation brief ---------------------------------------
+
+    /// Category prototype vectors, embedded on first use and cached.
+    ///
+    /// `None` when the embedder cannot serve; a failure is not cached, so the
+    /// next call retries once the model is back.
+    fn prototypes(&self) -> Option<Vec<(IncidentCategory, Embedding)>> {
+        let mut cached = self
+            .prototypes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(prototypes) = cached.as_ref() {
+            return Some(prototypes.clone());
+        }
+
+        let mut built = Vec::new();
+        for category in IncidentCategory::ALL {
+            if category == IncidentCategory::Other {
+                continue;
+            }
+            built.push((category, self.embedder.embed(&insight::prototype_text(category)).ok()?));
+        }
+        *cached = Some(built.clone());
+        Some(built)
+    }
+
+    /// Incidents, their rule extractions, and whatever vectors exist.
+    fn candidates(
+        &self,
+        limit: u32,
+    ) -> CoreResult<(Vec<Incident>, Vec<TextExtraction>, HashMap<String, Embedding>)> {
+        let incidents = self.database.list_incidents(Some(limit))?;
+        let extractions = incidents.iter().map(|i| nlp::extract(&i.description)).collect();
+        // Vectors are an enhancement: if they cannot be read, matching falls
+        // back to the lexical score rather than failing.
+        let vectors = self
+            .database
+            .incident_embeddings(&self.embedder.model_id())
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        Ok((incidents, extractions, vectors))
+    }
+
+    /// Everything derived about one incident: rule extraction, category,
+    /// severity with reasons, and related reports.
+    ///
+    /// Never calls the generation model, so it is fast and never waits on the
+    /// gate. Computed on demand and not stored.
+    pub fn insight(&self, incident_id: &str) -> CoreResult<IncidentInsight> {
+        let started = Instant::now();
+        let target = self.database.get_incident(incident_id)?;
+        let (incidents, extractions, vectors) = self.candidates(INSIGHT_CANDIDATES)?;
+
+        let target_extraction = nlp::extract(&target.description);
+        let target_vector = vectors.get(&target.id);
+        let semantic = target_vector
+            .and_then(|vector| Some((vector, self.prototypes()?)))
+            .and_then(|(vector, prototypes)| insight::semantic_category(vector, &prototypes));
+
+        let others: Vec<Candidate<'_>> = incidents
+            .iter()
+            .zip(extractions.iter())
+            .map(|(incident, extraction)| Candidate {
+                incident,
+                extraction,
+                vector: vectors.get(&incident.id),
+            })
+            .collect();
+        let target_candidate = Candidate {
+            incident: &target,
+            extraction: &target_extraction,
+            vector: target_vector,
+        };
+
+        let analysis = self.database.get_analysis(incident_id).unwrap_or(None);
+        Ok(insight::build_insight(
+            &target_candidate,
+            &others,
+            semantic,
+            analysis.as_ref(),
+            target_vector.is_some(),
+            started.elapsed().as_millis() as u64,
+        ))
+    }
+
+    /// A digest across the incidents this node holds.
+    ///
+    /// The figures are deterministic. With `summarise`, the model is also
+    /// asked for a short prose summary of *those figures only*; a summary that
+    /// is not supported by them is withheld and the reason stated.
+    pub fn situation_brief(&self, summarise: bool) -> CoreResult<SituationBrief> {
+        let started = Instant::now();
+        let (incidents, extractions, vectors) = self.candidates(insight::BRIEF_LIMIT as u32)?;
+        let candidates: Vec<Candidate<'_>> = incidents
+            .iter()
+            .zip(extractions.iter())
+            .map(|(incident, extraction)| Candidate {
+                incident,
+                extraction,
+                vector: vectors.get(&incident.id),
+            })
+            .collect();
+
+        let mut brief = insight::build_brief(&candidates, 0);
+
+        if summarise {
+            if brief.incidents_considered == 0 {
+                brief.summary_note = Some("There are no incidents to summarise.".to_string());
+            } else {
+                match self.summarise(&brief) {
+                    Ok((summary, support, model_id)) => {
+                        brief.summary_support = Some(support);
+                        brief.summary_model = Some(model_id);
+                        if support >= MIN_SUMMARY_SUPPORT {
+                            brief.summary = Some(summary);
+                        } else {
+                            brief.summary_note = Some(
+                                "The model's summary used material that is not in this node's \
+                                 records, so it was withheld."
+                                    .to_string(),
+                            );
+                        }
+                    }
+                    Err(error) => brief.summary_note = Some(error.message().to_string()),
+                }
+            }
+        }
+
+        brief.elapsed_ms = started.elapsed().as_millis() as u64;
+        Ok(brief)
+    }
+
+    /// Asks the model to summarise a brief. Untrusted output, checked by the
+    /// caller for support.
+    fn summarise(&self, brief: &SituationBrief) -> CoreResult<(String, f32, String)> {
+        let model_id = self
+            .generator
+            .model_info()
+            .map(|info| info.model_id)
+            .ok_or_else(|| CoreError::from(Unavailable::Disabled))?;
+
+        let context = insight::brief_context(brief);
+        let request = StructuredRequest {
+            system: prompt::BRIEF_SYSTEM_PROMPT.to_string(),
+            user: prompt::brief_user_message(&context),
+            schema: prompt::brief_schema(),
+            max_tokens: SUMMARY_TOKENS,
+        };
+
+        let _permit = self.gate.acquire()?;
+        let raw = self.generator.generate_structured(&request)?;
+
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct RawSummary {
+            summary: String,
+        }
+        let parsed: RawSummary = serde_json::from_str(&raw).map_err(|_| {
+            CoreError::validation("the local model produced output that is not a valid summary")
+        })?;
+
+        let summary: String = parsed.summary.trim().chars().take(MAX_SUMMARY_CHARS).collect();
+        if summary.is_empty() {
+            return Err(CoreError::validation("the local model produced an empty summary"));
+        }
+        let support = insight::support_score(&summary, &context);
+        Ok((summary, (support * 100.0).round() / 100.0, model_id))
     }
 
     /// Releases model memory.

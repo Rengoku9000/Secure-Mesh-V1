@@ -555,6 +555,60 @@ impl Database {
         Ok(scored)
     }
 
+    /// The stored vector for one incident under one embedding model.
+    ///
+    /// `None` when the incident has not been indexed yet, or was indexed by a
+    /// different model — vectors from another model are not comparable, so
+    /// they are not returned as though they were.
+    pub fn incident_embedding(
+        &self,
+        incident_id: &str,
+        model_id: &str,
+    ) -> CoreResult<Option<Embedding>> {
+        let conn = self.conn();
+        let bytes: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT vector FROM embeddings
+                 WHERE kind = 'INCIDENT' AND subject_id = ?1 AND model_id = ?2",
+                params![incident_id, model_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        // A corrupt blob reads as "not indexed" rather than failing the caller.
+        Ok(bytes.and_then(|b| Embedding::from_bytes(&b, model_id).ok()))
+    }
+
+    /// Every incident vector under one model, for similarity between
+    /// incidents.
+    ///
+    /// Read-only and bounded by [`MAX_RETRIEVAL_CANDIDATES`]. Vectors whose
+    /// incident no longer exists are skipped by the join.
+    pub fn incident_embeddings(&self, model_id: &str) -> CoreResult<Vec<(String, Embedding)>> {
+        let conn = self.conn();
+        let mut statement = conn.prepare(
+            "SELECT e.subject_id, e.vector
+             FROM embeddings e
+             JOIN incidents i ON i.id = e.subject_id
+             WHERE e.kind = 'INCIDENT' AND e.model_id = ?1
+             LIMIT ?2",
+        )?;
+
+        let rows = statement.query_map(
+            params![model_id, MAX_RETRIEVAL_CANDIDATES as i64],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )?;
+
+        let mut vectors = Vec::new();
+        for row in rows {
+            let (id, bytes) = row?;
+            if let Ok(embedding) = Embedding::from_bytes(&bytes, model_id) {
+                vectors.push((id, embedding));
+            }
+        }
+        Ok(vectors)
+    }
+
     pub fn count_embeddings(&self) -> CoreResult<u64> {
         let conn = self.conn();
         let count: i64 = conn.query_row("SELECT count(*) FROM embeddings", [], |r| r.get(0))?;

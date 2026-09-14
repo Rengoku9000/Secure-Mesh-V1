@@ -12,7 +12,17 @@
 //! restriction is enforced by the service's field list, not by these
 //! signatures; see `crate::ai`.
 
+//!
+//! # Off the main thread
+//!
+//! A plain `#[tauri::command]` runs on the main thread, so a command that
+//! waits seconds for a model freezes the window for that long. Every command
+//! that can reach a model is `#[tauri::command(async)]`, which runs it on
+//! Tauri's thread pool instead. The IPC names, arguments and return shapes are
+//! unchanged.
+
 use super::AppState;
+use crate::ai::insight::{IncidentInsight, SituationBrief};
 use crate::ai::knowledge_pack::InstallReport;
 use crate::ai::{
     GroundedAnswer, IncidentIndexState, IndexReport, IntelligenceStatus, KnowledgeBaseSummary,
@@ -21,6 +31,29 @@ use crate::domain::IncidentAnalysis;
 use crate::error::CoreResult;
 use crate::storage::intelligence::KnowledgeDocument;
 use tauri::State;
+
+/// Derived insight for one incident: extracted facts, category, severity
+/// with reasons, and related reports.
+///
+/// Works on a node with no model. Read-only — nothing is stored, nothing is
+/// sent to peers.
+#[tauri::command(async)]
+pub fn get_incident_insight(
+    state: State<'_, AppState>,
+    incident_id: String,
+) -> CoreResult<IncidentInsight> {
+    state.runtime.incident_insight(&incident_id)
+}
+
+/// A situation digest across local incidents, optionally with a short
+/// model-written summary of the figures.
+#[tauri::command(async)]
+pub fn get_situation_brief(
+    state: State<'_, AppState>,
+    summarise: Option<bool>,
+) -> CoreResult<SituationBrief> {
+    state.runtime.situation_brief(summarise.unwrap_or(false))
+}
 
 /// Model, readiness, and index sizes for the Intelligence panel.
 #[tauri::command]
@@ -33,7 +66,7 @@ pub fn get_intelligence_status(state: State<'_, AppState>) -> IntelligenceStatus
 /// Slow — seconds on CPU — so the UI calls it explicitly rather than on every
 /// incident. Analysis is never automatic: it must not sit on the path of
 /// incident capture.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn analyse_incident(
     state: State<'_, AppState>,
     incident_id: String,
@@ -54,7 +87,7 @@ pub fn get_incident_analysis(
 }
 
 /// Answers a question from this node's own records.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ask_securemesh(
     state: State<'_, AppState>,
     question: String,
@@ -67,7 +100,7 @@ pub fn ask_securemesh(
 ///
 /// Indexing is automatic — a local write and an applied replication each
 /// trigger a pass — so this exists for a manual retry, not as the mechanism.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn index_intelligence(state: State<'_, AppState>) -> CoreResult<IndexReport> {
     state.runtime.index_intelligence()
 }
@@ -98,7 +131,7 @@ pub fn get_knowledge_documents(state: State<'_, AppState>) -> CoreResult<Vec<Kno
 ///
 /// Safe to call repeatedly — each document is keyed by a content hash, so a
 /// second call reports everything as already present and writes nothing.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn install_operational_knowledge(state: State<'_, AppState>) -> CoreResult<InstallReport> {
     state.runtime.install_operational_knowledge()
 }

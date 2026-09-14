@@ -154,7 +154,7 @@ pub struct BenchmarkReport {
 ///
 /// Accuracy shifts with prompt wording, so a result without this is not
 /// reproducible.
-pub const PROMPT_VERSION: &str = "analysis-v2/rag-v2";
+pub const PROMPT_VERSION: &str = "analysis-v3/rag-v2";
 
 fn ratio(part: usize, whole: usize) -> f64 {
     if whole == 0 {

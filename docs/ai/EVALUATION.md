@@ -325,6 +325,55 @@ around.
 
 ---
 
+## Rule layer, semantic fallback, and similarity calibration
+
+Measured by `cargo run --example nlp_evaluation` — no benchmark harness or
+database involved; the rule layer needs neither, and the two similarity parts
+run against the local BGE embedding model when it is provisioned.
+
+```powershell
+cd src-tauri
+cargo run --example nlp_evaluation --release
+```
+
+### Category accuracy
+
+| Set | Rules only | Semantic only | Rules + fallback |
+|---|---|---|---|
+| Synthetic, seed 42, n=500 | **96.8%** | — | — |
+| Synthetic, seed 7, n=300 | **96.7%** | — | — |
+| Held-out, hand-written, n=36 | 69.4% (8 with no cue) | 72.2% | **83.3%** |
+
+The synthetic figure is the same upper-bound caveat as everywhere else in this
+document — the rule vocabulary was written by someone who had read the
+templates it is scored against. The held-out set is hand-phrased,
+independently, and is the more honest number: rules alone answer 69.4%, and
+the semantic fallback recovers roughly half of the rest, for 83.3% combined.
+Six of thirty-six still miss — mostly medical and resource-shortage phrasing
+distant from both the rule cues and the category prototype text (e.g. "Woman
+in labour needs urgent help" and "The river has breached the embankment" match
+nothing and fall to `OTHER` untouched).
+
+### Similarity bands — measured against the thresholds in `ai/insight.rs`
+
+| Pair type (n=6–7) | Measured cosine (min / mean / max) | Threshold |
+|---|---|---|
+| Same event, restated | 0.796 / 0.851 / 0.962 | `DUPLICATE_MIN = 0.93` |
+| Same kind, different event | 0.579 / 0.626 / 0.691 | `POSSIBLE_DUPLICATE_MIN = 0.86`, `RELATED_MIN = 0.76` |
+| Unrelated | 0.425 / 0.517 / 0.623 | — |
+
+**The thresholds are not calibrated to this data, and it shows.** Of seven
+hand-labelled "same event, restated" pairs, only one scored above 0.93 and was
+correctly banded `DUPLICATE`; two landed as `POSSIBLE_DUPLICATE`, and four —
+more than half — scored as merely `RELATED`. The bands separate genuinely
+unrelated pairs cleanly (nothing above 0.691 was misbanded), so the mechanism
+works; the specific cut points chosen (0.93 / 0.86 / 0.76) were not derived
+from measurement and sit too high for `DUPLICATE` given what restating a real
+report actually looks like on this model. **Open item, not silently shipped**:
+recorded in `docs/architecture/ROADMAP.md` (Phase 3), not yet fixed.
+
+---
+
 ## Latency, summarised
 
 On CPU, no GPU, on the hardware above:

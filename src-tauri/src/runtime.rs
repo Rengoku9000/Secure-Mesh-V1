@@ -8,6 +8,8 @@
 //! The runtime is deliberately free of Tauri types so it can be constructed
 //! and driven directly from integration tests.
 
+use crate::ai::insight::{self, Candidate, IncidentInsight, SituationBrief};
+use crate::ai::nlp;
 use crate::ai::{
     BackgroundIndexer, GroundedAnswer, IncidentIndexState, IndexReport, IntelligenceService,
     IntelligenceStatus,
@@ -403,6 +405,80 @@ impl NodeRuntime {
             // view must render on a node with no model.
             None => Ok(None),
         }
+    }
+
+    /// Derived insight about one incident: extracted facts, category,
+    /// explainable severity, and related reports.
+    ///
+    /// Works with no model at all — the rule layer and lexical matching need
+    /// only records this node already holds. With a model provisioned,
+    /// related reports are matched by vector and a semantic category fallback
+    /// is available. Read-only: nothing is stored and nothing is sent.
+    pub fn incident_insight(&self, incident_id: &str) -> CoreResult<IncidentInsight> {
+        if let Some(service) = &self.intelligence {
+            return service.insight(incident_id);
+        }
+
+        let started = std::time::Instant::now();
+        let target = self.database.get_incident(incident_id)?;
+        let incidents = self.database.list_incidents(Some(1_000))?;
+        let extractions: Vec<_> = incidents.iter().map(|i| nlp::extract(&i.description)).collect();
+        let target_extraction = nlp::extract(&target.description);
+        let others: Vec<Candidate<'_>> = incidents
+            .iter()
+            .zip(extractions.iter())
+            .map(|(incident, extraction)| Candidate {
+                incident,
+                extraction,
+                vector: None,
+            })
+            .collect();
+
+        Ok(insight::build_insight(
+            &Candidate {
+                incident: &target,
+                extraction: &target_extraction,
+                vector: None,
+            },
+            &others,
+            None,
+            None,
+            false,
+            started.elapsed().as_millis() as u64,
+        ))
+    }
+
+    /// A situation digest across the incidents this node holds.
+    ///
+    /// The figures never need a model. A prose summary is attempted only when
+    /// asked for and only when a model is attached.
+    pub fn situation_brief(&self, summarise: bool) -> CoreResult<SituationBrief> {
+        if let Some(service) = &self.intelligence {
+            return service.situation_brief(summarise);
+        }
+
+        let started = std::time::Instant::now();
+        let incidents = self.database.list_incidents(Some(insight::BRIEF_LIMIT as u32))?;
+        let extractions: Vec<_> = incidents.iter().map(|i| nlp::extract(&i.description)).collect();
+        let candidates: Vec<Candidate<'_>> = incidents
+            .iter()
+            .zip(extractions.iter())
+            .map(|(incident, extraction)| Candidate {
+                incident,
+                extraction,
+                vector: None,
+            })
+            .collect();
+
+        let mut brief = insight::build_brief(&candidates, started.elapsed().as_millis() as u64);
+        if summarise {
+            brief.summary_note = Some(
+                "No local model is available on this node, so there is no prose summary. \
+                 The figures above are computed without one."
+                    .to_string(),
+            );
+        }
+        Ok(brief)
     }
 
     /// Answers a question from this node's own records.

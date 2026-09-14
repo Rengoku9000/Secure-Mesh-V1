@@ -379,6 +379,179 @@ export interface IncidentAnalysis {
   generatedAt: string;
 }
 
+// --- Laptop-side insight (derived, local, never replicated) ---
+
+/** Finer-grained incident type. Mirrors `ai::nlp::Hazard`. */
+export type Hazard =
+  | "FIRE"
+  | "EXPLOSION"
+  | "MEDICAL_EMERGENCY"
+  | "ACCIDENT"
+  | "STRUCTURAL_DAMAGE"
+  | "FLOOD"
+  | "LANDSLIDE"
+  | "TRAPPED_PERSONS"
+  | "MISSING_PERSONS"
+  | "ROAD_BLOCKAGE"
+  | "POWER_FAILURE"
+  | "INFRASTRUCTURE_FAILURE"
+  | "COMMUNICATION_FAILURE"
+  | "EARTHQUAKE"
+  | "SEVERE_WEATHER"
+  | "EVACUATION"
+  | "RESOURCE_SHORTAGE"
+  | "HAZARDOUS_MATERIAL";
+
+export interface HazardMention {
+  hazard: Hazard;
+  cue: string;
+  negated: boolean;
+  resolved: boolean;
+  headline: boolean;
+}
+
+export type PersonStatus =
+  | "DECEASED"
+  | "TRAPPED"
+  | "MISSING"
+  | "INJURED"
+  | "AT_RISK"
+  | "DISPLACED"
+  | "AFFECTED";
+
+export interface PeopleMention {
+  count: number | null;
+  approximate: boolean;
+  status: PersonStatus;
+  subset: boolean;
+  text: string;
+}
+
+export interface PeopleSummary {
+  deceased: number | null;
+  trapped: number | null;
+  missing: number | null;
+  injured: number | null;
+  displaced: number | null;
+  affected: number | null;
+  atRisk: number | null;
+  approximate: boolean;
+  unquantified: boolean;
+}
+
+export interface RouteMention {
+  text: string;
+  blocked: boolean;
+}
+
+export interface QuantityMention {
+  value: number;
+  unit: string;
+  approximate: boolean;
+}
+
+export interface SeverityFactor {
+  label: string;
+  weight: number;
+}
+
+export interface SeverityAssessment {
+  level: Severity;
+  score: number;
+  reason: string;
+  factors: SeverityFactor[];
+}
+
+/** What the rule layer found in one report. Mirrors `ai::nlp::TextExtraction`. */
+export interface TextExtraction {
+  version: string;
+  category: IncidentCategory;
+  categoryConfidence: number;
+  categoryScores: { category: IncidentCategory; score: number }[];
+  hazards: HazardMention[];
+  people: PeopleMention[];
+  peopleSummary: PeopleSummary;
+  locations: string[];
+  routes: RouteMention[];
+  structures: string[];
+  organizations: string[];
+  times: string[];
+  quantities: QuantityMention[];
+  urgencyCues: string[];
+  severity: SeverityAssessment;
+}
+
+export type Relation = "DUPLICATE" | "POSSIBLE_DUPLICATE" | "RELATED";
+export type MatchMethod = "SEMANTIC" | "LEXICAL";
+export type CategoryMethod = "LEXICAL" | "SEMANTIC" | "NONE";
+
+export interface RelatedIncident {
+  incidentId: string;
+  excerpt: string;
+  operatorSeverity: Severity;
+  createdAt: string;
+  similarity: number;
+  relation: Relation;
+  method: MatchMethod;
+  sameCategory: boolean;
+  sharedHazards: Hazard[];
+  distanceKm: number | null;
+  hoursApart: number;
+}
+
+/**
+ * Everything derived about one incident on this device. Mirrors
+ * `ai::insight::IncidentInsight`. Computed on demand, never stored or sent.
+ */
+export interface IncidentInsight {
+  incidentId: string;
+  category: IncidentCategory;
+  categoryMethod: CategoryMethod;
+  semanticCategory: { category: IncidentCategory; similarity: number } | null;
+  extraction: TextExtraction;
+  modelAgrees: boolean | null;
+  related: RelatedIncident[];
+  severityDiffersFromOperator: boolean;
+  semanticAvailable: boolean;
+  elapsedMs: number;
+}
+
+export interface BriefPriority {
+  incidentId: string;
+  excerpt: string;
+  category: IncidentCategory;
+  derivedSeverity: Severity;
+  score: number;
+  reason: string;
+  operatorSeverity: Severity;
+  createdAt: string;
+}
+
+/** Mirrors `ai::insight::SituationBrief`. */
+export interface SituationBrief {
+  incidentsConsidered: number;
+  categories: { category: IncidentCategory; count: number }[];
+  derivedSeverity: { level: Severity; count: number }[];
+  people: {
+    deceased: number;
+    trapped: number;
+    missing: number;
+    injured: number;
+    atRisk: number;
+    reportsWithPeople: number;
+    approximate: boolean;
+  };
+  blockedRoutes: string[];
+  priorities: BriefPriority[];
+  duplicateGroups: string[][];
+  semanticAvailable: boolean;
+  summary: string | null;
+  summaryModel: string | null;
+  summarySupport: number | null;
+  summaryNote: string | null;
+  elapsedMs: number;
+}
+
 /** Mirrors `ai::IntelligenceStatus`. */
 export interface IntelligenceStatus {
   state: "READY" | "LOADING" | "UNAVAILABLE";
