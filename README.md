@@ -1,21 +1,34 @@
 # SecureMesh
 
-**Confidential Edge-AI Platform for Resilient Offline Communication**
+**Local-First Secure Edge-Computing Platform for Disaster Management**
 
-Smart India Hackathon 2026 · STH260001 (Open Innovation) · Hardware ·
-Blockchain & Cybersecurity
+Smart India Hackathon 2026 · SIH26223 · Hardware · Disaster Management · AICTE
 
-> A self-contained, offline-first, secure edge-computing node that can
-> communicate, store, synchronise and locally process information without
-> depending on external cloud services.
+> SecureMesh is a self-contained, local-first secure edge-computing platform
+> designed for disaster management, enabling nearby nodes to communicate,
+> synchronise incident information, share situational data, and perform local
+> intelligence processing — without mandatory dependence on external cloud
+> services.
 
-**Current status: Phase 2.5 complete.** Nodes hold cryptographic identities,
+SecureMesh's P2P networking (libp2p over QUIC, with mDNS local discovery)
+provides resilient local communication between nodes; a separate, local
+intelligence layer processes the incident information exchanged over that
+network. The two are independent: the mesh moves records with no model
+involved, and intelligence never touches the network on its own.
+
+**Current status: Phase 3 complete.** Nodes hold cryptographic identities,
 persist an append-only signed event log, discover each other on a local network
 with no server, authenticate over encrypted QUIC, and replicate incidents —
 converging correctly across partitions, restarts, duplicate delivery and
 out-of-order arrival. A peer must be **explicitly enrolled by an operator**
-before anything is exchanged with it; authentication alone grants nothing. Local
-AI and confidential computing are designed but **not implemented** — see
+before anything is exchanged with it; authentication alone grants nothing. A
+local, deterministic NLP layer extracts hazards, people counts, locations,
+routes and an explainable severity from incident text with no model loaded,
+matches related and duplicate reports, and — with an optional on-device
+generation model — can produce a grounded summary of a cross-incident
+situation brief. All of this runs and stays on the node. **Confidential
+computing (hardware-backed keys, a TEE) remains designed but not
+implemented.** This is a prototype, not production-ready — see
 [Roadmap](#roadmap) and [Current limitations](#current-limitations).
 
 ---
@@ -42,8 +55,8 @@ SecureMesh nodes are independent by construction. Each one:
 2. Stores its own operational data locally ✅
 3. Communicates directly with nearby nodes ✅
 4. Synchronises without a coordinating server ✅ — **only with enrolled peers** ✅
-5. Runs AI inference on-device *(Phase 3)*
-6. Answers questions from local documents *(Phase 4)*
+5. Runs AI inference on-device ✅ *(Phase 3)*
+6. Answers questions from local documents ✅ *(Phase 3 — absorbed the original Phase 4 scope)*
 7. Protects keys and processing in hardware *(Phase 5)*
 
 A node that can see no peers is in a **normal** state, not a degraded one.
@@ -488,11 +501,11 @@ Details and per-phase exit criteria:
 
 ### On blockchain
 
-The theme is "Blockchain & Cybersecurity"; SecureMesh fits through
-cybersecurity. A distributed ledger is **not** part of the MVP: consensus trades
-away availability under partition, and availability under partition is the whole
-requirement. It will be added only if a specific architectural problem genuinely
-calls for it.
+SecureMesh's problem statement (SIH26223, Hardware · Disaster Management) does
+not call for a distributed ledger. A blockchain is **not** part of the MVP:
+consensus trades away availability under partition, and availability under
+partition is the whole requirement here. It would be added only if a specific
+architectural problem genuinely called for it.
 
 ---
 
