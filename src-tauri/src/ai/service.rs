@@ -27,7 +27,7 @@ use crate::ai::nlp::{self, TextExtraction};
 use crate::ai::prompt;
 use crate::ai::rag::{self, GroundedAnswer};
 use crate::ai::Unavailable;
-use crate::domain::{Incident, IncidentAnalysis, IncidentCategory, RawAnalysis};
+use crate::domain::{Incident, IncidentCategory, RawAnalysis};
 use crate::error::{CoreError, CoreResult};
 use crate::storage::intelligence::{EmbeddingKind, KnowledgeDocument};
 use crate::storage::Database;
@@ -202,7 +202,10 @@ impl IntelligenceService {
     /// The incident text is fenced as data; the output is schema-constrained,
     /// then parsed, then validated, and only then stored. A model that produces
     /// nonsense yields an error, never a corrupt record.
-    pub fn analyse_incident(&self, incident_id: &str) -> CoreResult<IncidentAnalysis> {
+    pub fn analyse_incident(
+        &self,
+        incident_id: &str,
+    ) -> CoreResult<crate::ai::consistency::AnalysisOutcome> {
         let incident = self.database.get_incident(incident_id)?;
 
         let model_id = self
@@ -213,7 +216,12 @@ impl IntelligenceService {
 
         // The rule layer's findings go to the model as labelled, fallible
         // context: the model is asked to judge, not to rediscover counts.
-        let facts = nlp::facts_line(&nlp::extract(&incident.description));
+        //
+        // The same extraction is reused after the answer comes back, so the
+        // rules run once per analysis rather than twice — and the evidence the
+        // model was shown is exactly the evidence its answer is checked against.
+        let extraction = nlp::extract(&incident.description);
+        let facts = nlp::facts_line(&extraction);
         let request = StructuredRequest {
             system: prompt::analysis_system_prompt(),
             user: prompt::analysis_user_message_with_facts(&incident.description, &facts),
@@ -233,12 +241,44 @@ impl IntelligenceService {
 
         let analysis = parsed.validate(incident_id, &model_id, latency_ms)?;
         self.database.store_analysis(&analysis)?;
-        Ok(analysis)
+
+        // After the model output has been parsed and validated, and before the
+        // result is treated as operator-facing intelligence. This never alters
+        // `analysis`: it records where the model and the report's own stated
+        // facts disagree, so an operator can see both. A model talked into
+        // "severity LOW" by the report it is reading still produces that
+        // answer — but it no longer arrives unaccompanied.
+        let consistency =
+            crate::ai::consistency::check_against(&analysis, &extraction, &incident.description);
+
+        Ok(crate::ai::consistency::AnalysisOutcome {
+            analysis,
+            consistency,
+        })
     }
 
-    /// The stored analysis for an incident, if one exists.
-    pub fn analysis_for(&self, incident_id: &str) -> CoreResult<Option<IncidentAnalysis>> {
-        self.database.get_analysis(incident_id)
+    /// The stored analysis for an incident, with the rules' current verdict.
+    ///
+    /// The consistency report is recomputed rather than stored. It is a pure
+    /// function of the analysis and the report text, so recomputing it returns
+    /// exactly what was produced when the model ran — and if the rule layer is
+    /// improved later, an operator sees today's evidence rather than a verdict
+    /// frozen at the moment of inference. It also means no storage migration:
+    /// `IncidentAnalysis` and its table are unchanged.
+    pub fn analysis_for(
+        &self,
+        incident_id: &str,
+    ) -> CoreResult<Option<crate::ai::consistency::AnalysisOutcome>> {
+        let Some(analysis) = self.database.get_analysis(incident_id)? else {
+            return Ok(None);
+        };
+        let incident = self.database.get_incident(incident_id)?;
+        let consistency = crate::ai::consistency::check(&analysis, &incident.description);
+
+        Ok(Some(crate::ai::consistency::AnalysisOutcome {
+            analysis,
+            consistency,
+        }))
     }
 
     /// Ingests a document: normalise, chunk, store.
@@ -874,12 +914,19 @@ mod tests {
         let f = fixture(StubEngine::ready(GOOD_OUTPUT), true);
         let id = incident(&f, "Floodwater rising in the north");
 
-        let analysis = f.service.analyse_incident(&id).unwrap();
+        let outcome = f.service.analyse_incident(&id).unwrap();
 
-        assert_eq!(analysis.incident_id, id);
-        assert_eq!(analysis.model_id, "stub-model");
-        assert_eq!(analysis.summary, "Flooding reported in the northern zone.");
-        assert_eq!(f.service.analysis_for(&id).unwrap().unwrap(), analysis);
+        assert_eq!(outcome.analysis.incident_id, id);
+        assert_eq!(outcome.analysis.model_id, "stub-model");
+        assert_eq!(
+            outcome.analysis.summary,
+            "Flooding reported in the northern zone."
+        );
+        // The read path returns the same analysis *and* recomputes the same
+        // verdict. That equality is what licenses not storing the consistency
+        // report: recomputation is a pure function of the analysis and the
+        // report text, so it cannot drift from what inference produced.
+        assert_eq!(f.service.analysis_for(&id).unwrap().unwrap(), outcome);
     }
 
     #[test]

@@ -1,0 +1,108 @@
+# LoRA/QLoRA configuration for fine-tuning SecureMesh-SLM.
+#
+# Targets Qwen2.5-1.5B-Instruct specifically — the model already provisioned
+# and evaluated by the shipped application (see ai/models/README.md and
+# docs/ai/EVALUATION.md). Changing base_model_path here does not change what
+# SecureMesh runs; nothing in src-tauri reads this file. It only configures
+# `training/scripts/finetune.py`.
+
+base_model:
+  # Local path to a directory holding the full-precision (or bf16) Hugging
+  # Face checkout of Qwen2.5-1.5B-Instruct — NOT the quantized .gguf the
+  # application uses. GGUF is a llama.cpp inference format; fine-tuning needs
+  # the original HF weights, which export_gguf.py converts back to GGUF
+  # afterwards.
+  #
+  # Acquired in Phase 3F from the official Qwen/Qwen2.5-1.5B-Instruct
+  # repository into the training tree. Deliberately NOT under ai/models/:
+  # that holds the quantised GGUF the running application serves, which is a
+  # provisioned, hash-verified inference artefact and is never written here.
+  # Training model and production model are separate by construction.
+  path: "training/models/Qwen2.5-1.5B-Instruct"
+  # Set true to load the base model in 4-bit (QLoRA) via bitsandbytes,
+  # trading a little quality for substantially less VRAM/RAM during training.
+  # Recommended default for a single consumer GPU or CPU-only training.
+  load_in_4bit: true
+
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  bias: "none"
+  # Qwen2 attention + MLP projection names, standard for this architecture
+  # family. If base_model.path points at a different architecture, this list
+  # must be revisited — it is not auto-detected.
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  task_type: "CAUSAL_LM"
+
+training:
+  # Versioned per run: dataset version + method + run number. The adapter is
+  # written here, never over the base model and never over the production
+  # GGUF, so a run can be discarded by deleting one directory.
+  output_dir: "training/results/runs/securemesh-slm-v2-qlora-r1"
+  num_train_epochs: 3
+  # Microbatch of 1 with 16 accumulation steps, NOT 2x8.
+  #
+  # Effective batch size is 16 either way, and HF Trainer produces an
+  # identical schedule: 66 optimizer steps per epoch, 198 total, 6 warmup
+  # steps (num_update_steps_per_epoch = ceil(len_dataloader / gas), and
+  # ceil(526/8) == ceil(1052/16) == 66). Learning dynamics are unchanged.
+  #
+  # What changes is memory. Measured on the RTX 5050 (7.96 GiB physical):
+  # batch 2 peaked at 9.316 GiB reserved — 1.356 GiB *past* the device — and
+  # completed only because WDDM silently spills to host RAM over PCIe. It did
+  # not raise OutOfMemoryError; it just ran 6.8x slower on the backward pass.
+  # Batch 1 fits with room to spare. See docs/ai/FINETUNING.md.
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  # Evaluation batch size must be set explicitly: TrainingArguments defaults
+  # it to 8, and eval_strategy is "epoch", so the default would forward eight
+  # sequences of up to 596 tokens at every epoch boundary. Batch 2 already
+  # overshot this 7.96 GiB device by 1.356 GiB; batch 8 would be far worse.
+  # Evaluation is forward-only and computes no gradients, so this affects
+  # memory alone — no training hyperparameter and no learning dynamics.
+  per_device_eval_batch_size: 1
+  learning_rate: 2.0e-4
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  logging_steps: 5
+  eval_strategy: "epoch"
+  save_strategy: "epoch"
+  save_total_limit: 3
+  seed: 42
+  # A 1.5B model at rank 16 does not need bf16 on most training hardware in
+  # hand for this project; left explicit rather than auto-detected so a run
+  # is reproducible across machines with different default dtypes.
+  bf16: true
+  # 1024, not the runtime's 2048 context. The longest training example is
+  # ~694 tokens (estimated from characters; the real tokenizer was not
+  # available when this was set), so 1024 leaves substantial headroom while
+  # roughly halving activation memory — which matters on ~6.8 GB of free
+  # VRAM. This is a memory decision, not an accuracy one.
+  #
+  # Nothing is truncated to fit it: `preprocessing.measure_corpus` tokenizes
+  # the whole corpus before training and finetune.py REFUSES TO START if any
+  # example exceeds this value, rather than silently clipping a target.
+  max_seq_length: 1024
+
+# Data files are produced by build_dataset.py and consumed by finetune.py.
+data:
+  train_file: "training/data/processed/train.jsonl"
+  val_file: "training/data/processed/val.jsonl"
+
+# Every fine-tuning run must stay reproducible from these facts, the same
+# discipline docs/ai/EVALUATION.md applies to the evaluation harness.
+provenance:
+  # Must match DATASET_VERSION in training/scripts/build_dataset.py, which
+  # Phase 2 moved to v2 when the corpus went from 60 to 1,428 records. A
+  # config claiming v1 would attribute a run to the wrong data.
+  dataset_version: "securemesh-slm-v2"
+  config_version: "lora-v1"

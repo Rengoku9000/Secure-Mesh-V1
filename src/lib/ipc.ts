@@ -11,11 +11,12 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AnalysisOutcome,
   CoreErrorCode,
   DeviceLocation,
   GroundedAnswer,
   Incident,
-  IncidentAnalysis,
+  IncidentInsight,
   IndexReport,
   IntelligenceStatus,
   LocationPermission,
@@ -27,6 +28,7 @@ import type {
   Observation,
   Peer,
   PublicIdentity,
+  SituationBrief,
   SystemStatus,
   TrustEvent,
   TrustState,
@@ -175,20 +177,23 @@ export function getIntelligenceStatus(): Promise<IntelligenceStatus> {
  * Slow — seconds on CPU — so this is always an explicit operator action, never
  * automatic. Analysis must not sit on the path of incident capture.
  */
-export function analyseIncident(incidentId: string): Promise<IncidentAnalysis> {
-  return call<IncidentAnalysis>("analyse_incident", { incidentId });
+export function analyseIncident(incidentId: string): Promise<AnalysisOutcome> {
+  return call<AnalysisOutcome>("analyse_incident", { incidentId });
 }
 
 /**
- * The stored analysis for an incident.
+ * The stored analysis for an incident, with the rule layer's current verdict.
  *
  * Resolves to `null` rather than rejecting when no model is provisioned, so the
  * incident view renders identically on a node without AI.
+ *
+ * The analysis and the deterministic evidence about it arrive together, so a
+ * caller cannot take the model's answer without what the rules make of it.
  */
 export function getIncidentAnalysis(
   incidentId: string,
-): Promise<IncidentAnalysis | null> {
-  return call<IncidentAnalysis | null>("get_incident_analysis", { incidentId });
+): Promise<AnalysisOutcome | null> {
+  return call<AnalysisOutcome | null>("get_incident_analysis", { incidentId });
 }
 
 /** Answers a question from this node's own records. */

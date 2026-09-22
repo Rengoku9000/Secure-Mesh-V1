@@ -27,7 +27,6 @@ use crate::ai::knowledge_pack::InstallReport;
 use crate::ai::{
     GroundedAnswer, IncidentIndexState, IndexReport, IntelligenceStatus, KnowledgeBaseSummary,
 };
-use crate::domain::IncidentAnalysis;
 use crate::error::CoreResult;
 use crate::storage::intelligence::KnowledgeDocument;
 use tauri::State;
@@ -66,15 +65,17 @@ pub fn get_intelligence_status(state: State<'_, AppState>) -> IntelligenceStatus
 /// Slow — seconds on CPU — so the UI calls it explicitly rather than on every
 /// incident. Analysis is never automatic: it must not sit on the path of
 /// incident capture.
+/// Returns the model's analysis together with what the deterministic rule
+/// layer makes of it, so the operator sees both rather than only the model.
 #[tauri::command(async)]
 pub fn analyse_incident(
     state: State<'_, AppState>,
     incident_id: String,
-) -> CoreResult<IncidentAnalysis> {
+) -> CoreResult<crate::ai::consistency::AnalysisOutcome> {
     state.runtime.analyse_incident(&incident_id)
 }
 
-/// The stored analysis for an incident, if one exists.
+/// The stored analysis for an incident, if one exists, with the rules' verdict.
 ///
 /// Returns `None` rather than an error when intelligence is unavailable, so the
 /// incident view renders identically on a node with no model.
@@ -82,7 +83,7 @@ pub fn analyse_incident(
 pub fn get_incident_analysis(
     state: State<'_, AppState>,
     incident_id: String,
-) -> CoreResult<Option<IncidentAnalysis>> {
+) -> CoreResult<Option<crate::ai::consistency::AnalysisOutcome>> {
     state.runtime.incident_analysis(&incident_id)
 }
 

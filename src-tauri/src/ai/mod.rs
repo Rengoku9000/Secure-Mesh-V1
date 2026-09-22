@@ -34,6 +34,7 @@
 //! reports its AI subsystem as unavailable. Intelligence is a layer on top of
 //! SecureMesh, never a dependency of it.
 
+pub mod consistency;
 pub mod dataset;
 pub mod embedding;
 pub mod engine;
@@ -49,6 +50,7 @@ pub mod prompt;
 pub mod rag;
 pub mod service;
 
+pub use consistency::{AnalysisOutcome, ConsistencyReport, Disagreement};
 pub use embedding::{Embedding, EmbeddingEngine};
 pub use engine::{
     EngineHealth, GenerationRequest, LocalInferenceEngine, ModelInfo, StructuredRequest,
@@ -68,6 +70,18 @@ use crate::error::CoreError;
 pub enum Unavailable {
     /// No model file at the configured path.
     ModelMissing(String),
+    /// A model file is present, but it is not the artifact this build pins.
+    ///
+    /// Distinguished from [`Self::ModelMissing`] because the two call for
+    /// different responses: one is a provisioning step that was never done,
+    /// the other is a file that changed underneath a node that was working.
+    /// A node reporting this has **not** loaded the model and has not fallen
+    /// back to anything else.
+    ModelCorrupt {
+        path: String,
+        expected: String,
+        actual: String,
+    },
     /// No inference runtime binary.
     RuntimeMissing(String),
     /// The runtime is present but did not start or stopped responding.
@@ -83,6 +97,16 @@ impl Unavailable {
             Unavailable::ModelMissing(path) => {
                 format!("No model file at {path}. See docs/ai/PROVISIONING.md.")
             }
+            Unavailable::ModelCorrupt {
+                path,
+                expected,
+                actual,
+            } => format!(
+                "Model integrity check failed for {path}: expected SHA-256 {expected}, \
+                 found {actual}. The model was NOT loaded and nothing was used in its \
+                 place. Restore the pinned artifact or re-provision it — see \
+                 docs/ai/PROVISIONING.md."
+            ),
             Unavailable::RuntimeMissing(path) => {
                 format!("No inference runtime at {path}. See docs/ai/PROVISIONING.md.")
             }

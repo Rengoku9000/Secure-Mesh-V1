@@ -3,10 +3,10 @@ import { CoreError, getIncidentAnalysis, getIncidentInsight } from "../../lib/ip
 import { SeverityBadge } from "../../components/SeverityBadge";
 import { IncidentAnalysisView } from "./IncidentAnalysis";
 import type {
+  AnalysisOutcome,
   CategoryMethod,
   Hazard,
   Incident,
-  IncidentAnalysis,
   IncidentInsight,
   IntelligenceStatus,
   PeopleSummary,
@@ -90,7 +90,7 @@ export function IncidentInsightView({
   onOpenIncident,
 }: IncidentInsightViewProps) {
   const [insight, setInsight] = useState<IncidentInsight | null>(null);
-  const [analysis, setAnalysis] = useState<IncidentAnalysis | null>(null);
+  const [analysis, setAnalysis] = useState<AnalysisOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

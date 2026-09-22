@@ -2,13 +2,15 @@ import { useState } from "react";
 import { analyseIncident, CoreError } from "../../lib/ipc";
 import { formatTimestamp } from "../../lib/format";
 import { SeverityBadge } from "../../components/SeverityBadge";
-import type { Incident, IncidentAnalysis, IntelligenceStatus } from "../../types/core";
+import { formatModelConfidence } from "./confidence";
+import { reviewPanel } from "./review";
+import type { AnalysisOutcome, Incident, IntelligenceStatus } from "../../types/core";
 
 interface IncidentAnalysisProps {
   incident: Incident;
-  analysis: IncidentAnalysis | null;
+  analysis: AnalysisOutcome | null;
   status: IntelligenceStatus | null;
-  onAnalysed: (analysis: IncidentAnalysis) => void;
+  onAnalysed: (outcome: AnalysisOutcome) => void;
 }
 
 /**
@@ -20,10 +22,20 @@ interface IncidentAnalysisProps {
  * The model's severity is shown *beside* the operator's rather than replacing
  * it. When they disagree that is worth seeing, and silently overwriting a
  * human's CRITICAL with a model's LOW would be the worst possible failure here.
+ *
+ * The same principle governs the deterministic layer below. Rules run over the
+ * same report text produce their own reading, and where the two differ both are
+ * shown. The rules are *evidence*, not a correction: they are frequently wrong
+ * too, and replacing the model's answer with theirs would swap one fallible
+ * judgement for another while hiding that a swap happened.
+ *
+ * What the review panel shows is decided by `review.ts`, which is plain
+ * TypeScript so the existing `node --test` runner can cover it. This component
+ * renders that decision and adds nothing to it.
  */
 export function IncidentAnalysisView({
   incident,
-  analysis,
+  analysis: outcome,
   status,
   onAnalysed,
 }: IncidentAnalysisProps) {
@@ -31,6 +43,9 @@ export function IncidentAnalysisView({
   const [error, setError] = useState<string | null>(null);
 
   const ready = status?.state === "READY";
+  // What the model said, and what the rules make of it. Kept apart on purpose.
+  const analysis = outcome?.analysis ?? null;
+  const panel = reviewPanel(outcome?.consistency ?? null);
 
   async function handleAnalyse() {
     setRunning(true);
@@ -63,6 +78,36 @@ export function IncidentAnalysisView({
       {error && (
         <div className="alert" role="alert">
           <div className="alert__body">{error}</div>
+        </div>
+      )}
+
+      {panel.state === "review-required" && (
+        <div className="alert" role="alert">
+          <div className="alert__body">
+            <strong>{panel.heading}</strong>
+            <p className="text-muted">{panel.notice}</p>
+            <dl className="key-value">
+              {panel.rows.map((row) => (
+                <div className="key-value__row" key={row.field}>
+                  <dt className="key-value__key">{row.field}</dt>
+                  <dd className="key-value__value">
+                    <div>
+                      <span className="text-muted">Model result: </span>
+                      {row.modelResult}
+                    </div>
+                    <div>
+                      <span className="text-muted">Deterministic evidence: </span>
+                      {row.deterministicEvidence}
+                    </div>
+                    <div className="analysis__disagreement">{row.reason}</div>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {panel.uncheckedNotice && (
+              <p className="text-muted">{panel.uncheckedNotice}</p>
+            )}
+          </div>
         </div>
       )}
 
@@ -123,11 +168,7 @@ export function IncidentAnalysisView({
 
           <div className="key-value__row">
             <dt className="key-value__key">Confidence</dt>
-            <dd className="key-value__value">
-              {analysis.confidence === null
-                ? "not stated"
-                : `${(analysis.confidence * 100).toFixed(0)}% (model's own estimate)`}
-            </dd>
+            <dd className="key-value__value">{formatModelConfidence(analysis.confidence)}</dd>
           </div>
 
           <div className="key-value__row">
@@ -138,6 +179,12 @@ export function IncidentAnalysisView({
             </dd>
           </div>
         </dl>
+      )}
+
+      {panel.state === "no-disagreement" && (
+        <p className="text-muted">
+          {panel.notice} {panel.uncheckedNotice}
+        </p>
       )}
     </div>
   );

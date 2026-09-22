@@ -372,11 +372,59 @@ export interface IncidentAnalysis {
   entities: string[];
   affectedResources: string[];
   locationHint: string | null;
-  /** Model-stated confidence, clamped to 0..1. Absent when it gave none. */
+  /**
+   * Always `null` on analyses produced from Phase 7 onwards: the model states
+   * no calibrated confidence, so `RawAnalysis::validate` discards whatever it
+   * gives. Retained because rows stored before that change may still hold a
+   * clamped value. Never rendered as a number — see
+   * `features/intelligence/confidence.ts`.
+   */
   confidence: number | null;
   modelId: string;
   latencyMs: number;
   generatedAt: string;
+}
+
+/**
+ * One field where the model and the deterministic rule layer disagree.
+ * Mirrors `ai::consistency::Disagreement`.
+ */
+export interface Disagreement {
+  /** The analysis field in question. */
+  field: string;
+  /** What the model said. */
+  modelResult: string;
+  /** What rules over the same report text derived independently. */
+  deterministicEvidence: string;
+  /** Why this is surfaced, in operator-facing terms. */
+  reason: string;
+}
+
+/**
+ * What the deterministic layer makes of one analysis.
+ * Mirrors `ai::consistency::ConsistencyReport`.
+ *
+ * An empty `disagreements` list means the two agree on everything that *can*
+ * be checked — not that the analysis is correct. `uncheckedFields` names what
+ * had no deterministic source at all.
+ */
+export interface ConsistencyReport {
+  disagreements: Disagreement[];
+  uncheckedFields: string[];
+  needsOperatorReview: boolean;
+}
+
+/**
+ * An analysis together with the evidence about it.
+ * Mirrors `ai::consistency::AnalysisOutcome`.
+ *
+ * The two are separate on purpose: `analysis` is exactly what the model
+ * produced, and `consistency` is what the rules make of it. The rule layer is
+ * evidence for an operator, never an automatic replacement for the model.
+ */
+export interface AnalysisOutcome {
+  analysis: IncidentAnalysis;
+  consistency: ConsistencyReport;
 }
 
 // --- Laptop-side insight (derived, local, never replicated) ---

@@ -16,7 +16,6 @@ use crate::ai::{
 };
 use crate::domain::event::{EventKind, IncidentCreatedPayload, IncidentObservationPayload};
 use crate::domain::trust::{Capability, PeerRole, TrustEvent, TrustState};
-use crate::domain::IncidentAnalysis;
 use crate::domain::{Incident, MeshEvent, NewIncident, Observation, SyncStatus};
 use crate::error::{CoreError, CoreResult};
 use crate::identity::keystore::FileKeyStore;
@@ -392,13 +391,20 @@ impl NodeRuntime {
         })
     }
 
-    /// Analyses an incident locally and stores the derived intelligence.
-    pub fn analyse_incident(&self, incident_id: &str) -> CoreResult<IncidentAnalysis> {
+    /// Analyses an incident locally, stores it, and reports what the
+    /// deterministic rule layer makes of the model's answer.
+    pub fn analyse_incident(
+        &self,
+        incident_id: &str,
+    ) -> CoreResult<crate::ai::consistency::AnalysisOutcome> {
         self.require_intelligence()?.analyse_incident(incident_id)
     }
 
-    /// The stored analysis for an incident, if any.
-    pub fn incident_analysis(&self, incident_id: &str) -> CoreResult<Option<IncidentAnalysis>> {
+    /// The stored analysis for an incident, if any, with the rules' verdict.
+    pub fn incident_analysis(
+        &self,
+        incident_id: &str,
+    ) -> CoreResult<Option<crate::ai::consistency::AnalysisOutcome>> {
         match &self.intelligence {
             Some(service) => service.analysis_for(incident_id),
             // Absent intelligence means no analysis, not an error: the incident

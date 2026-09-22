@@ -46,9 +46,34 @@ Download the prebuilt llama.cpp release for the target platform from
 | Windows x64, CPU | `llama-b10375-bin-win-cpu-x64.zip` |
 | Windows x64, CUDA | `llama-b10375-bin-win-cuda-12.4-x64.zip` |
 | Windows ARM64 | `llama-b10375-bin-win-cpu-arm64.zip` |
+| Linux aarch64 (Raspberry Pi 4, Jetson) | no prebuilt asset — build from source, below |
 
 The CPU build is the default. See `ai/models/README.md` for why, despite a
 CUDA-capable GPU being present on the development machine.
+
+#### Linux aarch64 (single-board computers)
+
+The b10375 release publishes no Linux ARM64 binary, so the runtime is built on
+the board from the **same pinned tag**. The source is already vendored at
+`training/tools/llama.cpp` (commit `ba360efe1f574ebae727aad64112d18ecedca85a`),
+which is the revision the Q4_K_M model was converted and quantized with.
+
+```bash
+sudo apt-get install -y build-essential cmake libcurl4-openssl-dev
+cmake -S training/tools/llama.cpp -B build-arm -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF
+cmake --build build-arm -j"$(nproc)"
+mkdir -p ai/runtime/llama-cpu
+cp build-arm/bin/llama-server ai/runtime/llama-cpu/
+```
+
+The executable has no `.exe` suffix on Linux; `LlamaConfig` resolves the name
+per platform, so no configuration change is needed.
+
+A node with **no** AI assets is a supported configuration, not a broken one: a
+missing runtime or model makes `attach_intelligence` report the reason and
+carry on, and the node keeps capturing and replicating incidents. Provision the
+model only on boards that have the memory for it — roughly 1.3 GB resident for
+the 1.5B Q4_K_M generation model plus its KV cache, before the application.
 
 ### 2. Models
 

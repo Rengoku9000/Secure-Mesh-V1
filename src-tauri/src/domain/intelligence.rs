@@ -248,8 +248,11 @@ pub struct RawAnalysis {
     #[serde(default)]
     pub affected_resources: Vec<String>,
     pub location_hint: Option<String>,
-    /// The model's own stated confidence. Treated as a hint and clamped; a
-    /// model asserting 1.0 is not evidence of anything.
+    /// **Accepted on the wire, never propagated.** The field is kept so that
+    /// output or stored JSON carrying a confidence still deserialises rather
+    /// than being refused by `deny_unknown_fields`, but [`Self::validate`]
+    /// discards it. The model is no longer asked for it either — it is absent
+    /// from `ai::prompt::analysis_schema`.
     pub confidence: Option<f64>,
 }
 
@@ -265,8 +268,12 @@ impl RawAnalysis {
     ///   odd enum value does not discard an otherwise usable analysis;
     /// - severity must parse, since it drives operational display and a wrong
     ///   guess there is worse than no answer;
-    /// - confidence is clamped to `0.0..=1.0`, with a non-finite value treated
-    ///   as absent.
+    /// - confidence is **discarded**. It used to be clamped to `0.0..=1.0`,
+    ///   which made a model saying `2` and a model saying `95` both arrive as
+    ///   `1.0` and display as "100%" — the least confident answers presenting
+    ///   as the most. The training targets contain no `confidence` field, so
+    ///   there is no scale behind the number to recover. An honest absence is
+    ///   worth more to an operator than a confident-looking invention.
     pub fn validate(
         self,
         incident_id: &str,
@@ -316,10 +323,10 @@ impl RawAnalysis {
             entities: bounded_list(self.entities),
             affected_resources: bounded_list(self.affected_resources),
             location_hint: bounded_text(self.location_hint.as_deref(), MAX_FIELD_CHARS),
-            confidence: self
-                .confidence
-                .filter(|c| c.is_finite())
-                .map(|c| c.clamp(0.0, 1.0)),
+            // Deliberately discarded. See the note on `RawAnalysis::confidence`:
+            // the model has no calibrated confidence to give, and clamping what
+            // it does give turned "2" and "95" alike into a displayed 100%.
+            confidence: None,
             model_id: model_id.to_string(),
             latency_ms,
             generated_at: crate::domain::now(),
@@ -365,7 +372,10 @@ pub struct IncidentAnalysis {
     pub entities: Vec<String>,
     pub affected_resources: Vec<String>,
     pub location_hint: Option<String>,
-    /// Model-stated confidence, clamped. Absent when the model gave none.
+    /// **Always `None` for analyses produced now.** [`RawAnalysis::validate`]
+    /// discards whatever the model states; rows written before that change may
+    /// still hold a clamped value, which is why the field and its stored column
+    /// remain. Never presented to an operator as a number.
     pub confidence: Option<f64>,
     /// Which model produced this, so an analysis can be re-run or discarded
     /// when the model changes.
@@ -528,23 +538,78 @@ mod tests {
     // --- Confidence --------------------------------------------------------
 
     #[test]
-    fn confidence_is_clamped_to_a_probability() {
-        for (given, expected) in [(1.5, 1.0), (-2.0, 0.0), (0.5, 0.5)] {
+    fn no_stated_confidence_survives_validation_whatever_its_scale() {
+        // The defect this replaces: confidence was clamped to 0.0..=1.0, so a
+        // model saying 1, 2 or 3 and a model saying 90, 95 or 100 all produced
+        // exactly 1.0, which the UI rendered as "100%". The least confident
+        // outputs displayed as maximum confidence.
+        //
+        // Measured on fresh reports, the candidate and stock models emitted
+        // every one of these values, and the training targets contain no
+        // `confidence` field at all (0 of 1052 train, 0 of 214 val), so there
+        // is no convention behind any of them.
+        for given in [
+            0.0, 0.5, 0.75, 0.9, 0.95, 1.0, // the 0..1 scale it was assumed to use
+            1.0, 2.0, 3.0, 50.0, 80.0, 90.0, 95.0, 100.0, // what it actually emits
+            -1.0, -2.0, 1e9, // out of range in both directions
+        ] {
             let mut candidate = raw();
             candidate.confidence = Some(given);
             let analysis = candidate.validate("inc-1", "m", 0).unwrap();
-            assert_eq!(analysis.confidence, Some(expected));
+            assert_eq!(
+                analysis.confidence, None,
+                "confidence {given} must not survive validation"
+            );
         }
     }
 
     #[test]
-    fn a_non_finite_confidence_is_treated_as_absent() {
+    fn a_missing_confidence_is_still_a_valid_analysis() {
+        let mut candidate = raw();
+        candidate.confidence = None;
+        let analysis = candidate.validate("inc-1", "m", 0).unwrap();
+        assert_eq!(analysis.confidence, None);
+    }
+
+    #[test]
+    fn a_non_finite_confidence_is_discarded_rather_than_stored_or_panicking() {
         for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let mut candidate = raw();
             candidate.confidence = Some(bad);
             let analysis = candidate.validate("inc-1", "m", 0).unwrap();
             assert_eq!(analysis.confidence, None);
         }
+    }
+
+    #[test]
+    fn a_malformed_confidence_is_refused_at_parse_rather_than_coerced() {
+        // A non-numeric confidence must not be silently read as 0 or dropped:
+        // it means the output is not the shape SecureMesh asked for.
+        for bad in [
+            r#"{"summary":"ok","severity":"HIGH","confidence":"high"}"#,
+            r#"{"summary":"ok","severity":"HIGH","confidence":"0.95"}"#,
+            r#"{"summary":"ok","severity":"HIGH","confidence":[0.9]}"#,
+            r#"{"summary":"ok","severity":"HIGH","confidence":{"value":0.9}}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<RawAnalysis>(bad).is_err(),
+                "should refuse: {bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_model_is_never_asked_for_a_confidence_it_cannot_calibrate() {
+        // The schema and validation have to agree: asking for a field that is
+        // then always discarded would spend tokens to produce nothing, and
+        // would leave the unbounded property in place for a future caller to
+        // start trusting again.
+        let schema = crate::ai::prompt::analysis_schema();
+        assert!(
+            schema["properties"]["confidence"].is_null(),
+            "confidence must not be offered to the model"
+        );
+        assert_eq!(schema["additionalProperties"], false);
     }
 
     // --- Deserialisation of hostile model output ---------------------------

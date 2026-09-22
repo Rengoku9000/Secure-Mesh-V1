@@ -1,0 +1,198 @@
+{
+  "access_status_distribution": {
+    "BLOCKED": 261,
+    "OPEN": 700,
+    "RESTRICTED": 305,
+    "UNKNOWN": 162
+  },
+  "category_distribution": {
+    "COMMUNICATIONS": 117,
+    "EARTHQUAKE": 119,
+    "EVACUATION": 121,
+    "FIRE": 119,
+    "FLOODING": 119,
+    "INFRASTRUCTURE": 121,
+    "MEDICAL": 119,
+    "OTHER": 119,
+    "POWER": 119,
+    "RESOURCE_SHORTAGE": 115,
+    "ROAD_BLOCKAGE": 121,
+    "SEVERE_WEATHER": 119
+  },
+  "category_severity_shortcut": {
+    "chance_pct": 25.0,
+    "most_predictable_categories": [
+      {
+        "category": "OTHER",
+        "severity": "LOW",
+        "share_pct": 43.7
+      },
+      {
+        "category": "SEVERE_WEATHER",
+        "severity": "MEDIUM",
+        "share_pct": 34.5
+      },
+      {
+        "category": "INFRASTRUCTURE",
+        "severity": "HIGH",
+        "share_pct": 32.2
+      }
+    ],
+    "shortcut_accuracy_pct": 31.9
+  },
+  "contrastive": {
+    "groups_total": 168,
+    "groups_with_multiple_severities": 106,
+    "records_in_contrastive_groups": 1352
+  },
+  "features": {
+    "abbreviated": 874,
+    "ambiguous": 120,
+    "conflicting": 96,
+    "contrastive": 1180,
+    "false_positive": 28,
+    "location_references": 1416,
+    "multi_message": 96,
+    "noisy": 491,
+    "non_emergency_info": 92,
+    "people_counts": 499,
+    "resource_requests": 1133,
+    "with_entities": 516
+  },
+  "provenance_distribution": {
+    "synthetic": 1428
+  },
+  "report_length_bands": {
+    "long": 130,
+    "medium": 847,
+    "short": 451
+  },
+  "report_length_chars": {
+    "max": 395,
+    "mean": 103,
+    "min": 48
+  },
+  "scenario_groups": {
+    "group_size_histogram": {
+      "1": 60,
+      "8": 48,
+      "10": 7,
+      "12": 5,
+      "16": 5,
+      "18": 43
+    },
+    "groups": 168,
+    "records_per_group_max": 18,
+    "records_per_group_mean": 8.5,
+    "records_per_group_min": 1
+  },
+  "severity_by_category": {
+    "COMMUNICATIONS": {
+      "CRITICAL": 23,
+      "HIGH": 31,
+      "LOW": 33,
+      "MEDIUM": 30
+    },
+    "EARTHQUAKE": {
+      "CRITICAL": 23,
+      "HIGH": 29,
+      "LOW": 36,
+      "MEDIUM": 31
+    },
+    "EVACUATION": {
+      "CRITICAL": 23,
+      "HIGH": 29,
+      "LOW": 38,
+      "MEDIUM": 31
+    },
+    "FIRE": {
+      "CRITICAL": 24,
+      "HIGH": 33,
+      "LOW": 31,
+      "MEDIUM": 31
+    },
+    "FLOODING": {
+      "CRITICAL": 36,
+      "HIGH": 22,
+      "LOW": 23,
+      "MEDIUM": 38
+    },
+    "INFRASTRUCTURE": {
+      "CRITICAL": 22,
+      "HIGH": 39,
+      "LOW": 28,
+      "MEDIUM": 32
+    },
+    "MEDICAL": {
+      "CRITICAL": 35,
+      "HIGH": 23,
+      "LOW": 27,
+      "MEDIUM": 34
+    },
+    "OTHER": {
+      "CRITICAL": 12,
+      "HIGH": 26,
+      "LOW": 52,
+      "MEDIUM": 29
+    },
+    "POWER": {
+      "CRITICAL": 29,
+      "HIGH": 17,
+      "LOW": 36,
+      "MEDIUM": 37
+    },
+    "RESOURCE_SHORTAGE": {
+      "CRITICAL": 23,
+      "HIGH": 28,
+      "LOW": 28,
+      "MEDIUM": 36
+    },
+    "ROAD_BLOCKAGE": {
+      "CRITICAL": 17,
+      "HIGH": 30,
+      "LOW": 38,
+      "MEDIUM": 36
+    },
+    "SEVERE_WEATHER": {
+      "CRITICAL": 17,
+      "HIGH": 30,
+      "LOW": 31,
+      "MEDIUM": 41
+    }
+  },
+  "severity_distribution": {
+    "CRITICAL": 284,
+    "HIGH": 337,
+    "LOW": 401,
+    "MEDIUM": 406
+  },
+  "source_files": [
+    "incidents_v1.jsonl",
+    "incidents_v2_generated.jsonl"
+  ],
+  "total_examples": 1428,
+  "variation_tags": {
+    "abbrev": 360,
+    "abbreviation": 874,
+    "ambiguous": 120,
+    "conflicting": 96,
+    "emergency_style": 7,
+    "false_positive": 28,
+    "has_entities": 492,
+    "has_location": 1368,
+    "has_numbers": 683,
+    "has_people_count": 486,
+    "has_resource_request": 1088,
+    "incomplete_grammar": 6,
+    "informal": 512,
+    "ladder": 936,
+    "long_report": 130,
+    "multi_message": 96,
+    "noisy": 480,
+    "non_emergency_info": 92,
+    "plain": 528,
+    "short": 17,
+    "short_report": 181,
+    "typo": 491
+  }
+}
