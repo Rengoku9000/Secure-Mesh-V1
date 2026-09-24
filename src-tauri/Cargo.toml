@@ -32,6 +32,11 @@ sha2 = "0.11.0"
 libp2p = { version = "0.56.0", features = ["ed25519", "quic", "mdns", "request-response", "json", "identify", "ping", "macros", "tokio", "cbor"] }
 tokio = { version = "1.53.1", features = ["rt", "time", "macros"] }
 
+# Phase 1 LoRa transport: serial I/O to the E22 module over its CH340 USB-UART
+# bridge. Cross-platform (COMn on Windows, /dev/tty* or /dev/serial/by-id/*
+# on Linux), which is why this is used instead of a platform-specific API.
+serialport = "4"
+
 # Device location on Windows, via the platform's own location service.
 #
 # Not a new supply chain: Tauri already pulls `windows` in on this target, so

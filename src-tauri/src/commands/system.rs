@@ -38,3 +38,16 @@ pub fn get_link_states(state: State<'_, AppState>) -> CoreResult<Vec<LinkSnapsho
 pub fn get_peers(state: State<'_, AppState>) -> CoreResult<Vec<Peer>> {
     state.runtime.list_peers()
 }
+
+/// Sends a fixed diagnostic payload over the LoRa side of the mesh transport,
+/// if one is attached.
+///
+/// Phase 2 hardware verification only: this never touches incident/event
+/// synchronisation and never routes through the sync engine. Fails cleanly
+/// (returning an error the UI can surface, rather than panicking) when no
+/// LoRa device is configured or reachable.
+#[tauri::command]
+pub fn send_lora_diagnostic(state: State<'_, AppState>) -> CoreResult<()> {
+    const DIAGNOSTIC_PAYLOAD: &[u8] = b"SECUREMESH-LORA-RUST-TEST-01";
+    state.runtime.send_lora_diagnostic(DIAGNOSTIC_PAYLOAD)
+}

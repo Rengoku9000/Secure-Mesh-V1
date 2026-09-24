@@ -333,7 +333,12 @@ mod tests {
     #[test]
     fn an_analysis_agreeing_with_the_rules_needs_no_review() {
         let report = "Fire in the generator shed, thick smoke, staff have evacuated.";
-        let report_analysis = analysis("FIRE", "HIGH", "RESTRICTED", "Fire in the generator shed with staff evacuated.");
+        let report_analysis = analysis(
+            "FIRE",
+            "HIGH",
+            "RESTRICTED",
+            "Fire in the generator shed with staff evacuated.",
+        );
 
         let result = check(&report_analysis, report);
         assert!(
@@ -348,7 +353,12 @@ mod tests {
         // The shape of a successful injection: the report is plainly a fire,
         // the model was talked into OTHER.
         let report = "Flames visible through the roof of the paint store, thick black smoke.";
-        let coerced = analysis("OTHER", "HIGH", "RESTRICTED", "Flames visible through the roof of the paint store.");
+        let coerced = analysis(
+            "OTHER",
+            "HIGH",
+            "RESTRICTED",
+            "Flames visible through the roof of the paint store.",
+        );
 
         let result = check(&coerced, report);
         let found = result
@@ -367,7 +377,12 @@ mod tests {
     #[test]
     fn a_coerced_severity_downgrade_is_surfaced() {
         let report = "Building has collapsed and at least 3 people are trapped inside the rubble.";
-        let coerced = analysis("INFRASTRUCTURE", "LOW", "BLOCKED", "Building collapsed with people trapped inside the rubble.");
+        let coerced = analysis(
+            "INFRASTRUCTURE",
+            "LOW",
+            "BLOCKED",
+            "Building collapsed with people trapped inside the rubble.",
+        );
 
         let result = check(&coerced, report);
         assert!(
@@ -445,7 +460,10 @@ mod tests {
     }
 
     fn access_disagreement(result: &ConsistencyReport) -> Option<&Disagreement> {
-        result.disagreements.iter().find(|d| d.field == "access_status")
+        result
+            .disagreements
+            .iter()
+            .find(|d| d.field == "access_status")
     }
 
     /// The severity one level below `level`, or `None` at the bottom.
@@ -478,7 +496,10 @@ mod tests {
             "fixture precondition: a route must be detected, got {:?}",
             extraction.routes
         );
-        assert!(!extraction.any_route_blocked(), "fixture precondition: route must be open");
+        assert!(
+            !extraction.any_route_blocked(),
+            "fixture precondition: route must be open"
+        );
 
         let supported = analysis("ROAD_BLOCKAGE", "LOW", "OPEN", "The eastern road is clear.");
         let result = check(&supported, report);
@@ -512,7 +533,10 @@ mod tests {
         let result = check(&optimistic, report);
 
         let found = access_disagreement(&result).unwrap_or_else(|| {
-            panic!("unsupported OPEN must be surfaced: {:?}", result.disagreements)
+            panic!(
+                "unsupported OPEN must be surfaced: {:?}",
+                result.disagreements
+            )
         });
         assert_eq!(found.model_result, "OPEN");
         assert!(found.reason.contains("UNKNOWN"));
@@ -526,7 +550,10 @@ mod tests {
         // reachability passed unflagged.
         let report = "Small fire still burning in the waste bin behind the kitchen.";
         let extraction = nlp::extract(report);
-        assert!(extraction.routes.is_empty(), "fixture precondition: no routes");
+        assert!(
+            extraction.routes.is_empty(),
+            "fixture precondition: no routes"
+        );
         assert!(
             extraction.active_hazards().next().is_some(),
             "fixture precondition: hazard must still be active"
@@ -565,10 +592,19 @@ mod tests {
             extraction.hazards
         );
 
-        let reasonable = analysis("FIRE", "LOW", "OPEN", "Fire in the store room is under control.");
+        let reasonable = analysis(
+            "FIRE",
+            "LOW",
+            "OPEN",
+            "Fire in the store room is under control.",
+        );
         let result = check(&reasonable, report);
 
-        assert!(access_disagreement(&result).is_none(), "{:?}", result.disagreements);
+        assert!(
+            access_disagreement(&result).is_none(),
+            "{:?}",
+            result.disagreements
+        );
     }
 
     #[test]
@@ -614,7 +650,12 @@ mod tests {
         let report = "The road is completely blocked by a landslip, nothing can get through.";
 
         for status in ["RESTRICTED", "UNKNOWN", "BLOCKED"] {
-            let cautious = analysis("ROAD_BLOCKAGE", "HIGH", status, "Road blocked by a landslip.");
+            let cautious = analysis(
+                "ROAD_BLOCKAGE",
+                "HIGH",
+                status,
+                "Road blocked by a landslip.",
+            );
             let result = check(&cautious, report);
             assert!(
                 access_disagreement(&result).is_none(),
@@ -697,7 +738,10 @@ mod tests {
 
         let result = check(&calm, report);
         assert!(
-            !result.disagreements.iter().any(|d| d.field == "access_status"),
+            !result
+                .disagreements
+                .iter()
+                .any(|d| d.field == "access_status"),
             "a calm report claiming OPEN should not be flagged: {:?}",
             result.disagreements
         );
@@ -706,19 +750,35 @@ mod tests {
     #[test]
     fn claiming_a_route_is_open_when_the_report_says_blocked_is_surfaced() {
         let report = "The road is completely blocked by a landslip, nothing can get through.";
-        let optimistic = analysis("ROAD_BLOCKAGE", "HIGH", "OPEN", "Road completely blocked by a landslip.");
+        let optimistic = analysis(
+            "ROAD_BLOCKAGE",
+            "HIGH",
+            "OPEN",
+            "Road completely blocked by a landslip.",
+        );
 
         let result = check(&optimistic, report);
-        assert!(result.disagreements.iter().any(|d| d.field == "access_status"));
+        assert!(result
+            .disagreements
+            .iter()
+            .any(|d| d.field == "access_status"));
     }
 
     #[test]
     fn being_more_cautious_than_the_rules_is_not_a_disagreement() {
         let report = "The road is completely blocked by a landslip, nothing can get through.";
-        let cautious = analysis("ROAD_BLOCKAGE", "HIGH", "BLOCKED", "Road completely blocked by a landslip.");
+        let cautious = analysis(
+            "ROAD_BLOCKAGE",
+            "HIGH",
+            "BLOCKED",
+            "Road completely blocked by a landslip.",
+        );
 
         let result = check(&cautious, report);
-        assert!(!result.disagreements.iter().any(|d| d.field == "access_status"));
+        assert!(!result
+            .disagreements
+            .iter()
+            .any(|d| d.field == "access_status"));
     }
 
     #[test]
@@ -739,7 +799,12 @@ mod tests {
     fn nothing_here_modifies_the_analysis() {
         // The whole point: findings, never corrections.
         let report = "Flames through the roof of the paint store.";
-        let coerced = analysis("OTHER", "LOW", "OPEN", "Something happened at the paint store.");
+        let coerced = analysis(
+            "OTHER",
+            "LOW",
+            "OPEN",
+            "Something happened at the paint store.",
+        );
         let before = coerced.clone();
 
         let _ = check(&coerced, report);

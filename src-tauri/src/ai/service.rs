@@ -523,7 +523,12 @@ impl IntelligenceService {
             if category == IncidentCategory::Other {
                 continue;
             }
-            built.push((category, self.embedder.embed(&insight::prototype_text(category)).ok()?));
+            built.push((
+                category,
+                self.embedder
+                    .embed(&insight::prototype_text(category))
+                    .ok()?,
+            ));
         }
         *cached = Some(built.clone());
         Some(built)
@@ -533,9 +538,16 @@ impl IntelligenceService {
     fn candidates(
         &self,
         limit: u32,
-    ) -> CoreResult<(Vec<Incident>, Vec<TextExtraction>, HashMap<String, Embedding>)> {
+    ) -> CoreResult<(
+        Vec<Incident>,
+        Vec<TextExtraction>,
+        HashMap<String, Embedding>,
+    )> {
         let incidents = self.database.list_incidents(Some(limit))?;
-        let extractions = incidents.iter().map(|i| nlp::extract(&i.description)).collect();
+        let extractions = incidents
+            .iter()
+            .map(|i| nlp::extract(&i.description))
+            .collect();
         // Vectors are an enhancement: if they cannot be read, matching falls
         // back to the lexical score rather than failing.
         let vectors = self
@@ -665,9 +677,16 @@ impl IntelligenceService {
             CoreError::validation("the local model produced output that is not a valid summary")
         })?;
 
-        let summary: String = parsed.summary.trim().chars().take(MAX_SUMMARY_CHARS).collect();
+        let summary: String = parsed
+            .summary
+            .trim()
+            .chars()
+            .take(MAX_SUMMARY_CHARS)
+            .collect();
         if summary.is_empty() {
-            return Err(CoreError::validation("the local model produced an empty summary"));
+            return Err(CoreError::validation(
+                "the local model produced an empty summary",
+            ));
         }
         let support = insight::support_score(&summary, &context);
         Ok((summary, (support * 100.0).round() / 100.0, model_id))

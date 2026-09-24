@@ -65,6 +65,7 @@ pub fn run() {
             let runtime = Arc::new(runtime);
             spawn_mesh_loop(Arc::clone(&runtime));
             spawn_location_heartbeat(Arc::clone(&runtime));
+            spawn_lora_event_loop(Arc::clone(&runtime));
             app.manage(AppState::new(runtime));
             Ok(())
         })
@@ -101,6 +102,7 @@ pub fn run() {
             commands::install_operational_knowledge,
             commands::get_incident_insight,
             commands::get_situation_brief,
+            commands::send_lora_diagnostic,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -147,9 +149,22 @@ fn report_frontend_source(config: &tauri::Config) {
 /// network is still fully functional, so the failure is reported and the node
 /// continues standalone rather than refusing to launch.
 fn start_node(data_dir: &std::path::Path) -> CoreResult<NodeRuntime> {
+    use networking::composite_transport::CompositeTransport;
+    use networking::lora_transport::LoraTransport;
+    use networking::MeshTransport;
+
     let mut runtime =
         match networking::libp2p_transport::Libp2pTransport::start_for_data_dir(data_dir) {
-            Ok(transport) => NodeRuntime::initialize_with_transport(data_dir, Box::new(transport))?,
+            Ok(transport) => {
+                // LoRa is Phase 2's optional diagnostic side, never a
+                // replacement for QUIC: `from_env` degrades to `None` for a
+                // missing variable or an unopenable device, in which case
+                // `CompositeTransport` behaves exactly like a bare
+                // `Libp2pTransport` — see its own tests for that guarantee.
+                let lora = LoraTransport::from_env(transport.local_node_id());
+                let composite = CompositeTransport::new(transport, lora);
+                NodeRuntime::initialize_with_transport(data_dir, Box::new(composite))?
+            }
             Err(error) => {
                 eprintln!(
                     "[securemesh] mesh transport unavailable ({}); continuing standalone",
@@ -305,6 +320,46 @@ fn spawn_location_heartbeat(runtime: Arc<NodeRuntime>) {
             std::thread::sleep(wait);
         })
         .expect("spawn the location heartbeat thread");
+}
+
+/// Drives `NodeRuntime::lora_receive_tick`, the LoRa counterpart to
+/// [`spawn_mesh_loop`]'s QUIC pump.
+///
+/// Does not run at all when this node has no LoRa side attached —
+/// `mesh_attached()` alone is not enough, since a QUIC-only node has a mesh
+/// transport but no LoRa. This loop only *delivers* frames the transport's
+/// I/O thread already queued; it neither opens the serial port nor performs
+/// any signature or trust work itself, both of which stay entirely inside
+/// `lora_receive_tick` and the modules it calls.
+fn spawn_lora_event_loop(runtime: Arc<NodeRuntime>) {
+    if !runtime.lora_available() {
+        return;
+    }
+
+    const TICK: std::time::Duration = std::time::Duration::from_millis(250);
+
+    eprintln!("[securemesh] lora event receive enabled");
+
+    std::thread::Builder::new()
+        .name("securemesh-lora-rx".to_string())
+        .spawn(move || loop {
+            match runtime.lora_receive_tick() {
+                // Silent when nothing arrived, matching `spawn_mesh_loop`'s
+                // own idle behaviour.
+                Ok(report) if report != Default::default() => {
+                    eprintln!("[securemesh] lora rx {report:?}");
+                }
+                Ok(_) => {}
+                // One bad tick must not stop LoRa reception for good.
+                Err(error) => {
+                    eprintln!("[securemesh] lora receive tick failed: {}", error.message());
+                }
+            }
+
+            std::thread::sleep(TICK);
+        })
+        .map_err(|e| eprintln!("[securemesh] could not start the lora event receive loop: {e}"))
+        .ok();
 }
 
 fn spawn_mesh_loop(runtime: Arc<NodeRuntime>) {

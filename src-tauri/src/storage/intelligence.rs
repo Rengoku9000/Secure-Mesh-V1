@@ -594,10 +594,10 @@ impl Database {
              LIMIT ?2",
         )?;
 
-        let rows = statement.query_map(
-            params![model_id, MAX_RETRIEVAL_CANDIDATES as i64],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
-        )?;
+        let rows = statement
+            .query_map(params![model_id, MAX_RETRIEVAL_CANDIDATES as i64], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })?;
 
         let mut vectors = Vec::new();
         for row in rows {

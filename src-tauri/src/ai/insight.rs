@@ -176,9 +176,9 @@ pub fn choose_category(
 // ---------------------------------------------------------------------------
 
 const STEM_STOPWORDS: &[&str] = &[
-    "with", "from", "that", "this", "have", "been", "were", "there", "their", "reported",
-    "report", "near", "after", "into", "about", "still", "some", "they", "them", "also",
-    "which", "while", "being", "since", "will", "would", "could", "should", "across",
+    "with", "from", "that", "this", "have", "been", "were", "there", "their", "reported", "report",
+    "near", "after", "into", "about", "still", "some", "they", "them", "also", "which", "while",
+    "being", "since", "will", "would", "could", "should", "across",
 ];
 
 fn stem(word: &str) -> String {
@@ -303,7 +303,10 @@ pub fn related_incidents(target: &Candidate<'_>, others: &[Candidate<'_>]) -> Ve
             let (score, method) = similarity(target, other);
             let relation = relation_for(score, method)?;
             let other_hazards: HashSet<Hazard> = other.extraction.active_hazards().collect();
-            let mut shared: Vec<Hazard> = target_hazards.intersection(&other_hazards).copied().collect();
+            let mut shared: Vec<Hazard> = target_hazards
+                .intersection(&other_hazards)
+                .copied()
+                .collect();
             shared.sort_by_key(|h| h.label());
 
             Some(RelatedIncident {
@@ -362,10 +365,9 @@ pub fn build_insight(
         .filter(|r| r.relation == Relation::Related && r.hours_apart <= 24.0)
         .count();
     if corroborating >= 2 {
-        extraction.severity = extraction.severity.with_factor(
-            format!("{corroborating} related reports within a day"),
-            1,
-        );
+        extraction.severity = extraction
+            .severity
+            .with_factor(format!("{corroborating} related reports within a day"), 1);
     }
 
     IncidentInsight {
@@ -461,7 +463,10 @@ pub fn build_brief(candidates: &[Candidate<'_>], elapsed_ms: u64) -> SituationBr
     let mut severities: Vec<SeverityCount> = Severity::ALL
         .iter()
         .rev()
-        .map(|level| SeverityCount { level: *level, count: 0 })
+        .map(|level| SeverityCount {
+            level: *level,
+            count: 0,
+        })
         .collect();
     let mut people = PeopleTotals::default();
     let mut routes: Vec<String> = Vec::new();
@@ -470,7 +475,10 @@ pub fn build_brief(candidates: &[Candidate<'_>], elapsed_ms: u64) -> SituationBr
         let e = candidate.extraction;
         match categories.iter_mut().find(|c| c.category == e.category) {
             Some(entry) => entry.count += 1,
-            None => categories.push(CategoryCount { category: e.category, count: 1 }),
+            None => categories.push(CategoryCount {
+                category: e.category,
+                count: 1,
+            }),
         }
         if let Some(entry) = severities.iter_mut().find(|s| s.level == e.severity.level) {
             entry.count += 1;
@@ -595,7 +603,13 @@ pub fn brief_context(brief: &SituationBrief) -> String {
     let categories: Vec<String> = brief
         .categories
         .iter()
-        .map(|c| format!("{} {}", c.count, c.category.as_str().to_lowercase().replace('_', " ")))
+        .map(|c| {
+            format!(
+                "{} {}",
+                c.count,
+                c.category.as_str().to_lowercase().replace('_', " ")
+            )
+        })
         .collect();
     if !categories.is_empty() {
         lines.push(format!("By type: {}", categories.join(", ")));
@@ -608,11 +622,18 @@ pub fn brief_context(brief: &SituationBrief) -> String {
             p.trapped,
             p.missing,
             p.injured,
-            if p.approximate { " (some figures approximate)" } else { "" }
+            if p.approximate {
+                " (some figures approximate)"
+            } else {
+                ""
+            }
         ));
     }
     if !brief.blocked_routes.is_empty() {
-        lines.push(format!("Blocked routes: {}", brief.blocked_routes.join(", ")));
+        lines.push(format!(
+            "Blocked routes: {}",
+            brief.blocked_routes.join(", ")
+        ));
     }
     if !brief.duplicate_groups.is_empty() {
         lines.push(format!(
@@ -653,7 +674,8 @@ pub fn support_score(summary: &str, context: &str) -> f32 {
         .iter()
         .filter(|w| {
             context.contains(w.as_str())
-                || w.strip_suffix('s').is_some_and(|s| s.chars().count() >= 4 && context.contains(s))
+                || w.strip_suffix('s')
+                    .is_some_and(|s| s.chars().count() >= 4 && context.contains(s))
                 || (w.chars().count() >= 6 && context.contains(&stem(w)))
         })
         .count();
@@ -691,13 +713,33 @@ mod tests {
         let a = incident("Fire at the market", "HIGH", Some((12.97, 77.59)));
         let b = incident("Market is on fire", "HIGH", Some((12.971, 77.591)));
         let c = incident("Road blocked by a tree", "LOW", None);
-        let (ea, eb, ec) = (extract(&a.description), extract(&b.description), extract(&c.description));
-        let (va, vb, vc) = (vector(&[1.0, 0.0]), vector(&[0.99, 0.05]), vector(&[0.0, 1.0]));
+        let (ea, eb, ec) = (
+            extract(&a.description),
+            extract(&b.description),
+            extract(&c.description),
+        );
+        let (va, vb, vc) = (
+            vector(&[1.0, 0.0]),
+            vector(&[0.99, 0.05]),
+            vector(&[0.0, 1.0]),
+        );
 
-        let target = Candidate { incident: &a, extraction: &ea, vector: Some(&va) };
+        let target = Candidate {
+            incident: &a,
+            extraction: &ea,
+            vector: Some(&va),
+        };
         let others = [
-            Candidate { incident: &b, extraction: &eb, vector: Some(&vb) },
-            Candidate { incident: &c, extraction: &ec, vector: Some(&vc) },
+            Candidate {
+                incident: &b,
+                extraction: &eb,
+                vector: Some(&vb),
+            },
+            Candidate {
+                incident: &c,
+                extraction: &ec,
+                vector: Some(&vc),
+            },
         ];
         let related = related_incidents(&target, &others);
 
@@ -712,15 +754,35 @@ mod tests {
 
     #[test]
     fn without_vectors_matching_falls_back_to_words_and_hazards() {
-        let a = incident("Two people injured in a bus collision on the highway", "HIGH", None);
+        let a = incident(
+            "Two people injured in a bus collision on the highway",
+            "HIGH",
+            None,
+        );
         let b = incident("Bus collision on highway, two injured", "HIGH", None);
         let c = incident("Power outage across the district", "LOW", None);
-        let (ea, eb, ec) = (extract(&a.description), extract(&b.description), extract(&c.description));
+        let (ea, eb, ec) = (
+            extract(&a.description),
+            extract(&b.description),
+            extract(&c.description),
+        );
 
-        let target = Candidate { incident: &a, extraction: &ea, vector: None };
+        let target = Candidate {
+            incident: &a,
+            extraction: &ea,
+            vector: None,
+        };
         let others = [
-            Candidate { incident: &b, extraction: &eb, vector: None },
-            Candidate { incident: &c, extraction: &ec, vector: None },
+            Candidate {
+                incident: &b,
+                extraction: &eb,
+                vector: None,
+            },
+            Candidate {
+                incident: &c,
+                extraction: &ec,
+                vector: None,
+            },
         ];
         let related = related_incidents(&target, &others);
 
@@ -733,8 +795,16 @@ mod tests {
     fn an_incident_is_never_related_to_itself() {
         let a = incident("Fire", "HIGH", None);
         let ea = extract(&a.description);
-        let target = Candidate { incident: &a, extraction: &ea, vector: None };
-        let same = [Candidate { incident: &a, extraction: &ea, vector: None }];
+        let target = Candidate {
+            incident: &a,
+            extraction: &ea,
+            vector: None,
+        };
+        let same = [Candidate {
+            incident: &a,
+            extraction: &ea,
+            vector: None,
+        }];
         assert!(related_incidents(&target, &same).is_empty());
     }
 
@@ -745,8 +815,16 @@ mod tests {
         let (ea, eb) = (extract(&a.description), extract(&b.description));
         let va = Embedding::new(vec![1.0, 0.0], "model-a").unwrap();
         let vb = Embedding::new(vec![1.0, 0.0], "model-b").unwrap();
-        let target = Candidate { incident: &a, extraction: &ea, vector: Some(&va) };
-        let others = [Candidate { incident: &b, extraction: &eb, vector: Some(&vb) }];
+        let target = Candidate {
+            incident: &a,
+            extraction: &ea,
+            vector: Some(&va),
+        };
+        let others = [Candidate {
+            incident: &b,
+            extraction: &eb,
+            vector: Some(&vb),
+        }];
         // Identical vectors, but incomparable: lexical, and unrelated.
         assert!(related_incidents(&target, &others).is_empty());
     }
@@ -770,15 +848,24 @@ mod tests {
     #[test]
     fn rules_win_when_confident_and_the_fallback_fills_gaps() {
         let confident = extract("Major fire outbreak at the warehouse");
-        let semantic = Some(SemanticCategory { category: IncidentCategory::Flooding, similarity: 0.7 });
-        assert_eq!(choose_category(&confident, semantic), (IncidentCategory::Fire, CategoryMethod::Lexical));
+        let semantic = Some(SemanticCategory {
+            category: IncidentCategory::Flooding,
+            similarity: 0.7,
+        });
+        assert_eq!(
+            choose_category(&confident, semantic),
+            (IncidentCategory::Fire, CategoryMethod::Lexical)
+        );
 
         let blank = extract("The dam gave out overnight and the valley is under water");
         let chosen = choose_category(&blank, semantic);
         assert_ne!(chosen.1, CategoryMethod::None);
 
         let nothing = extract("Something happened");
-        assert_eq!(choose_category(&nothing, None), (IncidentCategory::Other, CategoryMethod::None));
+        assert_eq!(
+            choose_category(&nothing, None),
+            (IncidentCategory::Other, CategoryMethod::None)
+        );
     }
 
     #[test]
@@ -790,12 +877,28 @@ mod tests {
         let b = incident("Water rising in Zone A", "MEDIUM", None);
         let c = incident("Zone A streets under water", "MEDIUM", None);
         let (eb, ec) = (extract(&b.description), extract(&c.description));
-        let (va, vb, vc) = (vector(&[1.0, 0.0]), vector(&[0.8, 0.6]), vector(&[0.8, -0.6]));
+        let (va, vb, vc) = (
+            vector(&[1.0, 0.0]),
+            vector(&[0.8, 0.6]),
+            vector(&[0.8, -0.6]),
+        );
 
-        let target = Candidate { incident: &a, extraction: &ea, vector: Some(&va) };
+        let target = Candidate {
+            incident: &a,
+            extraction: &ea,
+            vector: Some(&va),
+        };
         let others = [
-            Candidate { incident: &b, extraction: &eb, vector: Some(&vb) },
-            Candidate { incident: &c, extraction: &ec, vector: Some(&vc) },
+            Candidate {
+                incident: &b,
+                extraction: &eb,
+                vector: Some(&vb),
+            },
+            Candidate {
+                incident: &c,
+                extraction: &ec,
+                vector: Some(&vc),
+            },
         ];
         let insight = build_insight(&target, &others, None, None, true, 0);
         assert_eq!(insight.related.len(), 2);
@@ -807,23 +910,57 @@ mod tests {
 
     #[test]
     fn the_brief_counts_prioritises_and_groups() {
-        let a = incident("Around 5 people trapped after the building collapsed, road blocked", "HIGH", None);
-        let b = incident("Five people trapped in the collapsed building", "HIGH", None);
+        let a = incident(
+            "Around 5 people trapped after the building collapsed, road blocked",
+            "HIGH",
+            None,
+        );
+        let b = incident(
+            "Five people trapped in the collapsed building",
+            "HIGH",
+            None,
+        );
         let c = incident("Minor power outage, stable", "LOW", None);
-        let (ea, eb, ec) = (extract(&a.description), extract(&b.description), extract(&c.description));
-        let (va, vb, vc) = (vector(&[1.0, 0.0]), vector(&[0.999, 0.01]), vector(&[0.0, 1.0]));
+        let (ea, eb, ec) = (
+            extract(&a.description),
+            extract(&b.description),
+            extract(&c.description),
+        );
+        let (va, vb, vc) = (
+            vector(&[1.0, 0.0]),
+            vector(&[0.999, 0.01]),
+            vector(&[0.0, 1.0]),
+        );
         let candidates = [
-            Candidate { incident: &a, extraction: &ea, vector: Some(&va) },
-            Candidate { incident: &b, extraction: &eb, vector: Some(&vb) },
-            Candidate { incident: &c, extraction: &ec, vector: Some(&vc) },
+            Candidate {
+                incident: &a,
+                extraction: &ea,
+                vector: Some(&va),
+            },
+            Candidate {
+                incident: &b,
+                extraction: &eb,
+                vector: Some(&vb),
+            },
+            Candidate {
+                incident: &c,
+                extraction: &ec,
+                vector: Some(&vc),
+            },
         ];
 
         let brief = build_brief(&candidates, 0);
         assert_eq!(brief.incidents_considered, 3);
-        assert_eq!(brief.people.trapped, 10, "summed, with duplicates flagged separately");
+        assert_eq!(
+            brief.people.trapped, 10,
+            "summed, with duplicates flagged separately"
+        );
         assert_eq!(brief.duplicate_groups.len(), 1);
         assert_eq!(brief.duplicate_groups[0].len(), 2);
-        assert_ne!(brief.priorities[0].incident_id, c.id, "the outage is not the top priority");
+        assert_ne!(
+            brief.priorities[0].incident_id, c.id,
+            "the outage is not the top priority"
+        );
         assert!(!brief.blocked_routes.is_empty() || ea.any_route_blocked());
 
         let context = brief_context(&brief);

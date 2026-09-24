@@ -33,93 +33,188 @@ const HELD_OUT: &[(&str, C)] = &[
     ("Major fire outbreak in the slum cluster", C::Fire),
     ("Thick black smoke pouring out of the godown", C::Fire),
     ("Shop gutted, still smouldering", C::Fire),
-    ("An elderly man has collapsed and is not breathing", C::Medical),
-    ("Three children with high fever and vomiting at the relief camp", C::Medical),
-    ("Woman in labour needs urgent help, no vehicle available", C::Medical),
-    ("2 persons require medical help near the bus stand", C::Medical),
+    (
+        "An elderly man has collapsed and is not breathing",
+        C::Medical,
+    ),
+    (
+        "Three children with high fever and vomiting at the relief camp",
+        C::Medical,
+    ),
+    (
+        "Woman in labour needs urgent help, no vehicle available",
+        C::Medical,
+    ),
+    (
+        "2 persons require medical help near the bus stand",
+        C::Medical,
+    ),
     ("Water entering houses in the low-lying colony", C::Flooding),
-    ("The river has breached the embankment near the village", C::Flooding),
-    ("Streets are knee-deep in water after the downpour", C::Flooding),
+    (
+        "The river has breached the embankment near the village",
+        C::Flooding,
+    ),
+    (
+        "Streets are knee-deep in water after the downpour",
+        C::Flooding,
+    ),
     ("Flash flood swept through the camp at night", C::Flooding),
-    ("Cracks have appeared in the flyover pillar", C::Infrastructure),
-    ("Part of the school boundary wall came down", C::Infrastructure),
+    (
+        "Cracks have appeared in the flyover pillar",
+        C::Infrastructure,
+    ),
+    (
+        "Part of the school boundary wall came down",
+        C::Infrastructure,
+    ),
     ("The old footbridge partially collapsed", C::Infrastructure),
     ("No electricity in the whole ward since morning", C::Power),
     ("Transformer blew up, the area is in darkness", C::Power),
     ("Power cut across the eastern district", C::Power),
-    ("Mobile towers are down, no signal anywhere", C::Communications),
-    ("We have lost radio contact with the forward team", C::Communications),
-    ("Internet and phone lines dead in the valley", C::Communications),
-    ("Boulders on the ghat road, vehicles cannot pass", C::RoadBlockage),
+    (
+        "Mobile towers are down, no signal anywhere",
+        C::Communications,
+    ),
+    (
+        "We have lost radio contact with the forward team",
+        C::Communications,
+    ),
+    (
+        "Internet and phone lines dead in the valley",
+        C::Communications,
+    ),
+    (
+        "Boulders on the ghat road, vehicles cannot pass",
+        C::RoadBlockage,
+    ),
     ("A fallen tree is blocking the highway", C::RoadBlockage),
     ("Mudslide has cut off the village road", C::RoadBlockage),
-    ("Strong shaking felt for twenty seconds, people ran outside", C::Earthquake),
+    (
+        "Strong shaking felt for twenty seconds, people ran outside",
+        C::Earthquake,
+    ),
     ("Aftershock rattled the town this morning", C::Earthquake),
     ("Cyclone winds tearing roofs off homes", C::SevereWeather),
     ("Hailstorm damaged crops and vehicles", C::SevereWeather),
     ("Lightning struck the temple tower", C::SevereWeather),
-    ("Families are being moved to the school shelter", C::Evacuation),
-    ("Villagers relocated to higher ground overnight", C::Evacuation),
-    ("The camp has run out of drinking water", C::ResourceShortage),
-    ("Only one day of rations left for 200 people", C::ResourceShortage),
-    ("Diesel for the generators is almost finished", C::ResourceShortage),
+    (
+        "Families are being moved to the school shelter",
+        C::Evacuation,
+    ),
+    (
+        "Villagers relocated to higher ground overnight",
+        C::Evacuation,
+    ),
+    (
+        "The camp has run out of drinking water",
+        C::ResourceShortage,
+    ),
+    (
+        "Only one day of rations left for 200 people",
+        C::ResourceShortage,
+    ),
+    (
+        "Diesel for the generators is almost finished",
+        C::ResourceShortage,
+    ),
 ];
 
 /// (a, b) pairs describing the same event in different words.
 const DUPLICATES: &[(&str, &str)] = &[
-    ("Heavy smoke reported near Block B. Around 5 people may still be inside.",
-     "Fire at Block B, about five residents believed trapped inside."),
-    ("Landslip has closed the mountain pass near Zone C.",
-     "Mountain pass at Zone C blocked by a landslide."),
-    ("Two people injured in a bus collision on NH-48.",
-     "Bus crash on NH-48, two injured."),
-    ("Power outage across the eastern district after the substation failed.",
-     "Eastern district has no electricity; substation down."),
-    ("River overflowed and water is entering homes in Ward 12.",
-     "Ward 12 houses flooded after the river burst its banks."),
-    ("Mobile network down across the valley.",
-     "No phone signal anywhere in the valley."),
-    ("The relief camp at Sector 9 has run out of drinking water.",
-     "Sector 9 relief camp: no drinking water left."),
+    (
+        "Heavy smoke reported near Block B. Around 5 people may still be inside.",
+        "Fire at Block B, about five residents believed trapped inside.",
+    ),
+    (
+        "Landslip has closed the mountain pass near Zone C.",
+        "Mountain pass at Zone C blocked by a landslide.",
+    ),
+    (
+        "Two people injured in a bus collision on NH-48.",
+        "Bus crash on NH-48, two injured.",
+    ),
+    (
+        "Power outage across the eastern district after the substation failed.",
+        "Eastern district has no electricity; substation down.",
+    ),
+    (
+        "River overflowed and water is entering homes in Ward 12.",
+        "Ward 12 houses flooded after the river burst its banks.",
+    ),
+    (
+        "Mobile network down across the valley.",
+        "No phone signal anywhere in the valley.",
+    ),
+    (
+        "The relief camp at Sector 9 has run out of drinking water.",
+        "Sector 9 relief camp: no drinking water left.",
+    ),
 ];
 
 /// Same kind of incident, different events.
 const RELATED: &[(&str, &str)] = &[
-    ("Fire at Block B, about five residents believed trapped inside.",
-     "Small kitchen fire at the hostel in Sector 4, already extinguished."),
-    ("Landslip has closed the mountain pass near Zone C.",
-     "Fallen tree blocking the service road in Zone A."),
-    ("Bus crash on NH-48, two injured.",
-     "Motorbike skidded near the market, rider hurt."),
-    ("Power outage across the eastern district after the substation failed.",
-     "Transformer sparking near the school, power fluctuating."),
-    ("Ward 12 houses flooded after the river burst its banks.",
-     "Water logging in the railway underpass after rain."),
-    ("Mobile network down across the valley.",
-     "Radio repeater on the ridge is not responding."),
+    (
+        "Fire at Block B, about five residents believed trapped inside.",
+        "Small kitchen fire at the hostel in Sector 4, already extinguished.",
+    ),
+    (
+        "Landslip has closed the mountain pass near Zone C.",
+        "Fallen tree blocking the service road in Zone A.",
+    ),
+    (
+        "Bus crash on NH-48, two injured.",
+        "Motorbike skidded near the market, rider hurt.",
+    ),
+    (
+        "Power outage across the eastern district after the substation failed.",
+        "Transformer sparking near the school, power fluctuating.",
+    ),
+    (
+        "Ward 12 houses flooded after the river burst its banks.",
+        "Water logging in the railway underpass after rain.",
+    ),
+    (
+        "Mobile network down across the valley.",
+        "Radio repeater on the ridge is not responding.",
+    ),
 ];
 
 /// Unrelated reports.
 const UNRELATED: &[(&str, &str)] = &[
-    ("Fire at Block B, about five residents believed trapped inside.",
-     "The relief camp at Sector 9 has run out of drinking water."),
-    ("Bus crash on NH-48, two injured.",
-     "Mobile network down across the valley."),
-    ("Ward 12 houses flooded after the river burst its banks.",
-     "Aftershock cracked the school wall."),
-    ("Power outage across the eastern district after the substation failed.",
-     "Families are being moved to the school shelter."),
-    ("Landslip has closed the mountain pass near Zone C.",
-     "An elderly man has collapsed and is not breathing."),
-    ("Heavy smoke reported near Block B.",
-     "Hailstorm damaged crops and vehicles."),
+    (
+        "Fire at Block B, about five residents believed trapped inside.",
+        "The relief camp at Sector 9 has run out of drinking water.",
+    ),
+    (
+        "Bus crash on NH-48, two injured.",
+        "Mobile network down across the valley.",
+    ),
+    (
+        "Ward 12 houses flooded after the river burst its banks.",
+        "Aftershock cracked the school wall.",
+    ),
+    (
+        "Power outage across the eastern district after the substation failed.",
+        "Families are being moved to the school shelter.",
+    ),
+    (
+        "Landslip has closed the mountain pass near Zone C.",
+        "An elderly man has collapsed and is not breathing.",
+    ),
+    (
+        "Heavy smoke reported near Block B.",
+        "Hailstorm damaged crops and vehicles.",
+    ),
 ];
 
 fn stats(values: &[f32]) -> String {
     let min = values.iter().cloned().fold(f32::INFINITY, f32::min);
     let max = values.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
     let mean = values.iter().sum::<f32>() / values.len().max(1) as f32;
-    format!("min {min:.3}  mean {mean:.3}  max {max:.3}  (n={})", values.len())
+    format!(
+        "min {min:.3}  mean {mean:.3}  max {max:.3}  (n={})",
+        values.len()
+    )
 }
 
 fn main() {
@@ -148,7 +243,10 @@ fn main() {
     }
 
     // --- Part B: held-out phrasing ------------------------------------------
-    println!("\n=== B. Held-out hand-written reports (n={}) ===", HELD_OUT.len());
+    println!(
+        "\n=== B. Held-out hand-written reports (n={}) ===",
+        HELD_OUT.len()
+    );
     let mut rules_correct = 0usize;
     let mut rules_silent = 0usize;
     for (text, expected) in HELD_OUT {
@@ -168,10 +266,16 @@ fn main() {
     );
 
     // --- Parts B/C with the embedding model ---------------------------------
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
     let config = LlamaConfig::embedding(&root, 19_201);
     if let Err(reason) = config.availability() {
-        println!("\nembedding model not provisioned ({}); semantic parts skipped", reason.detail());
+        println!(
+            "\nembedding model not provisioned ({}); semantic parts skipped",
+            reason.detail()
+        );
         return;
     }
     let embedder = LlamaServerEngine::new(config);
@@ -179,7 +283,14 @@ fn main() {
     let prototypes: Vec<_> = C::ALL
         .iter()
         .filter(|c| **c != C::Other)
-        .map(|c| (*c, embedder.embed(&prototype_text(*c)).expect("embed prototype")))
+        .map(|c| {
+            (
+                *c,
+                embedder
+                    .embed(&prototype_text(*c))
+                    .expect("embed prototype"),
+            )
+        })
         .collect();
 
     let mut combined = 0usize;
@@ -196,7 +307,9 @@ fn main() {
         if chosen == *expected {
             combined += 1;
         } else {
-            misses.push(format!("{text:?} → {chosen} via {method:?} (expected {expected})"));
+            misses.push(format!(
+                "{text:?} → {chosen} via {method:?} (expected {expected})"
+            ));
         }
     }
     println!(
@@ -268,7 +381,11 @@ fn main() {
             "none"
         }
     };
-    for (label, values) in [("dup", &duplicates), ("rel", &related), ("unrel", &unrelated)] {
+    for (label, values) in [
+        ("dup", &duplicates),
+        ("rel", &related),
+        ("unrel", &unrelated),
+    ] {
         let bands: Vec<&str> = values.iter().map(|s| band(*s)).collect();
         println!("  {label:<5} → {}", bands.join(", "));
     }

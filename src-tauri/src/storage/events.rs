@@ -371,6 +371,41 @@ impl Database {
         Ok(events)
     }
 
+    /// Sequence numbers this node actually holds for `origin_node` within
+    /// `start_seq..=end_seq`, ascending.
+    ///
+    /// Built for the LoRa historical-sync requester's 64-bit "have" bitmap
+    /// (Phase 6 step 4): it needs to know exactly which of a 64-wide window
+    /// of sequences are present, not their contents, so this reads only the
+    /// indexed `origin_seq` column rather than fetching and decoding full
+    /// event payloads the way [`Self::events_since`] does. Unlike
+    /// `events_since`, a gap inside the range does not stop the scan — the
+    /// caller wants to know about every held sequence in the window, not
+    /// just a contiguous run from one end of it.
+    pub fn held_sequences(
+        &self,
+        origin_node: &str,
+        start_seq: u64,
+        end_seq: u64,
+    ) -> CoreResult<Vec<u64>> {
+        let conn = self.conn();
+        let mut statement = conn.prepare(
+            "SELECT origin_seq FROM events
+             WHERE origin_node = ?1 AND origin_seq BETWEEN ?2 AND ?3
+             ORDER BY origin_seq ASC",
+        )?;
+        let rows = statement.query_map(
+            params![origin_node, start_seq as i64, end_seq as i64],
+            |row| row.get::<_, i64>(0),
+        )?;
+
+        let mut sequences = Vec::new();
+        for row in rows {
+            sequences.push(row? as u64);
+        }
+        Ok(sequences)
+    }
+
     /// Total events held locally.
     pub fn count_events(&self) -> CoreResult<u64> {
         let conn = self.conn();
@@ -864,6 +899,42 @@ mod tests {
         let delta = f.db.events_since(f.identity.node_id(), 0, 100).unwrap();
         assert_eq!(delta.len(), 2);
         assert_eq!(delta.last().unwrap().origin_seq, 2);
+    }
+
+    #[test]
+    fn held_sequences_reports_only_what_is_present_in_range_gaps_included() {
+        let f = fixture();
+        // seq 1, 2, 3, 6, 8 held; 3..=8 asked for.
+        for seq in [1, 2, 3, 6, 8] {
+            f.db.apply_event(&event_at(&f.identity, seq, "e"), f.identity.node_id(), None)
+                .unwrap();
+        }
+
+        let held = f.db.held_sequences(f.identity.node_id(), 5, 8).unwrap();
+        assert_eq!(held, vec![6, 8]);
+
+        // Unlike `events_since`, a gap inside the range does not stop the
+        // scan: 7 is missing but 8 is still reported.
+        let held = f.db.held_sequences(f.identity.node_id(), 3, 8).unwrap();
+        assert_eq!(held, vec![3, 6, 8]);
+    }
+
+    #[test]
+    fn held_sequences_is_empty_for_an_unknown_origin_or_empty_range() {
+        let f = fixture();
+        f.db.apply_event(&event_at(&f.identity, 1, "e"), f.identity.node_id(), None)
+            .unwrap();
+
+        assert!(f
+            .db
+            .held_sequences("never-heard-of-this-node", 1, 100)
+            .unwrap()
+            .is_empty());
+        assert!(f
+            .db
+            .held_sequences(f.identity.node_id(), 5, 10)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

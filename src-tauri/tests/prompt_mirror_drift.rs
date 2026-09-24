@@ -120,7 +120,11 @@ fn rust_required() -> BTreeSet<String> {
         .as_array()
         .expect("Rust analysis_schema has no required array")
         .iter()
-        .map(|v| v.as_str().expect("required entry is not a string").to_string())
+        .map(|v| {
+            v.as_str()
+                .expect("required entry is not a string")
+                .to_string()
+        })
         .collect()
 }
 
@@ -133,7 +137,8 @@ fn the_mirror_offers_exactly_the_fields_rust_offers() {
     let rust = rust_property_names();
 
     assert_eq!(
-        python, rust,
+        python,
+        rust,
         "prompt mirror drift: the Python evaluation schema and the Rust schema \
          offer different fields.\n  only in Python: {:?}\n  only in Rust:   {:?}\n\
          Rust is authoritative — update training/scripts/securemesh_prompt.py.",
@@ -207,8 +212,10 @@ fn both_sides_neutralise_chat_template_markers() {
         "prompt mirror drift: the Python mirror does not replace `<|`"
     );
     assert!(
-        source.contains(r#".replace(
-        "|>""#) || source.contains(r#".replace("|>""#),
+        source.contains(
+            r#".replace(
+        "|>""#
+        ) || source.contains(r#".replace("|>""#),
         "prompt mirror drift: the Python mirror does not replace `|>`"
     );
     let fence_fn = source

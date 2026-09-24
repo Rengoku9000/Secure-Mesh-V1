@@ -414,7 +414,9 @@ fn tokenize(original: &str) -> Vec<Token> {
         let joiner = matches!(c, '-' | ':' | '\'' | '/')
             || (c == '.'
                 && current_start.is_some()
-                && chars.get(index + 1).is_some_and(|(_, n)| n.is_ascii_digit())
+                && chars
+                    .get(index + 1)
+                    .is_some_and(|(_, n)| n.is_ascii_digit())
                 && index > 0
                 && chars[index - 1].1.is_ascii_digit());
         let is_word = c.is_alphanumeric() || (joiner && current_start.is_some());
@@ -531,7 +533,9 @@ const HEDGES: &[&str] = &[
 ];
 
 /// Vague quantities: people are present, the number is not stated.
-const VAGUE: &[&str] = &["several", "multiple", "many", "numerous", "few", "dozens", "hundreds", "scores"];
+const VAGUE: &[&str] = &[
+    "several", "multiple", "many", "numerous", "few", "dozens", "hundreds", "scores",
+];
 
 /// A number parsed from one or more tokens.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -615,7 +619,11 @@ fn parse_number(tokens: &[Token], index: usize) -> Option<ParsedNumber> {
     if matches!(word, "a" | "an") {
         if let Some(next) = tokens.get(index + 1) {
             if let Some(v @ (2 | 12)) = word_value(&next.text) {
-                let len = if tokens.get(index + 2).is_some_and(|t| t.text == "of") { 3 } else { 2 };
+                let len = if tokens.get(index + 2).is_some_and(|t| t.text == "of") {
+                    3
+                } else {
+                    2
+                };
                 return Some(ParsedNumber {
                     value: Some(v),
                     approximate: v == 2,
@@ -801,24 +809,62 @@ const CUES: &[Cue] = &[
 /// Words that, following "fire", make it a noun modifier rather than a fire:
 /// "fire brigade on scene", "fire exit blocked".
 const FIRE_GUARD: &[&str] = &[
-    "brigade", "service", "services", "department", "dept", "station", "engine", "engines",
-    "truck", "trucks", "tender", "tenders", "extinguisher", "extinguishers", "exit", "exits",
-    "drill", "safety", "fighter", "fighters", "officer", "officers", "crew", "team", "force",
-    "alarm", "escape",
+    "brigade",
+    "service",
+    "services",
+    "department",
+    "dept",
+    "station",
+    "engine",
+    "engines",
+    "truck",
+    "trucks",
+    "tender",
+    "tenders",
+    "extinguisher",
+    "extinguishers",
+    "exit",
+    "exits",
+    "drill",
+    "safety",
+    "fighter",
+    "fighters",
+    "officer",
+    "officers",
+    "crew",
+    "team",
+    "force",
+    "alarm",
+    "escape",
 ];
 
 /// Words that, following "medical", make it a supply rather than an emergency.
-const MEDICAL_GUARD: &[&str] = &["supplies", "supply", "stock", "stocks", "kits", "kit", "store", "stores", "team", "teams", "camp"];
+const MEDICAL_GUARD: &[&str] = &[
+    "supplies", "supply", "stock", "stocks", "kits", "kit", "store", "stores", "team", "teams",
+    "camp",
+];
 
 const NEGATIONS: &[&str] = &[
-    "no", "not", "without", "zero", "none", "nil", "never", "nobody", "neither", "nor",
-    "isn't", "wasn't", "aren't", "weren't", "don't", "doesn't", "didn't", "hasn't", "haven't",
+    "no", "not", "without", "zero", "none", "nil", "never", "nobody", "neither", "nor", "isn't",
+    "wasn't", "aren't", "weren't", "don't", "doesn't", "didn't", "hasn't", "haven't",
 ];
 
 /// Words in the same clause that say a hazard is present but easing.
 const RESOLUTION: &[&str] = &[
-    "extinguished", "contained", "control", "restored", "reopened", "cleared", "resolved",
-    "receded", "receding", "subsided", "doused", "removed", "repaired", "rescued",
+    "extinguished",
+    "contained",
+    "control",
+    "restored",
+    "reopened",
+    "cleared",
+    "resolved",
+    "receded",
+    "receding",
+    "subsided",
+    "doused",
+    "removed",
+    "repaired",
+    "rescued",
 ];
 
 fn word_matches(pattern: &str, token: &str) -> bool {
@@ -932,7 +978,10 @@ fn score_categories(mentions: &[(HazardMention, f32)]) -> Vec<CategoryScore> {
             let add = weight * category_weight * multiplier;
             match scores.iter_mut().find(|s| s.category == category) {
                 Some(score) => score.score += add,
-                None => scores.push(CategoryScore { category, score: add }),
+                None => scores.push(CategoryScore {
+                    category,
+                    score: add,
+                }),
             }
         }
     }
@@ -965,9 +1014,31 @@ const PERSON_NOUNS: &[&str] = &[
 /// Words that may sit between a number and its noun: "5 more people",
 /// "two elderly residents".
 const PERSON_ADJECTIVES: &[&str] = &[
-    "more", "other", "elderly", "young", "local", "adult", "adults", "small", "old", "senior",
-    "school", "migrant", "daily", "wage", "construction", "farm", "civilian", "seriously",
-    "critically", "badly", "severely", "reportedly", "confirmed", "further", "additional",
+    "more",
+    "other",
+    "elderly",
+    "young",
+    "local",
+    "adult",
+    "adults",
+    "small",
+    "old",
+    "senior",
+    "school",
+    "migrant",
+    "daily",
+    "wage",
+    "construction",
+    "farm",
+    "civilian",
+    "seriously",
+    "critically",
+    "badly",
+    "severely",
+    "reportedly",
+    "confirmed",
+    "further",
+    "additional",
 ];
 
 /// Status vocabulary, in priority order: a window naming both "dead" and
@@ -1121,21 +1192,88 @@ fn summarise_people(mentions: &[PeopleMention]) -> PeopleSummary {
 
 /// Nouns followed by an identifier: "Block B", "Sector 7", "Gate 2".
 const LOCATION_HEADS: &[&str] = &[
-    "block", "zone", "sector", "ward", "building", "tower", "gate", "floor", "wing", "phase",
-    "hall", "platform", "camp", "site", "area", "plot", "unit", "room", "bay", "section",
-    "colony", "village", "km", "milestone", "pier", "house", "flat", "stage", "level",
+    "block",
+    "zone",
+    "sector",
+    "ward",
+    "building",
+    "tower",
+    "gate",
+    "floor",
+    "wing",
+    "phase",
+    "hall",
+    "platform",
+    "camp",
+    "site",
+    "area",
+    "plot",
+    "unit",
+    "room",
+    "bay",
+    "section",
+    "colony",
+    "village",
+    "km",
+    "milestone",
+    "pier",
+    "house",
+    "flat",
+    "stage",
+    "level",
 ];
 
 const DIRECTIONS: &[&str] = &[
-    "north", "northern", "south", "southern", "east", "eastern", "west", "western", "central",
-    "upper", "lower", "north-east", "north-west", "south-east", "south-west", "northeast",
-    "northwest", "southeast", "southwest", "inner", "outer",
+    "north",
+    "northern",
+    "south",
+    "southern",
+    "east",
+    "eastern",
+    "west",
+    "western",
+    "central",
+    "upper",
+    "lower",
+    "north-east",
+    "north-west",
+    "south-east",
+    "south-west",
+    "northeast",
+    "northwest",
+    "southeast",
+    "southwest",
+    "inner",
+    "outer",
 ];
 
 const PLACE_NOUNS: &[&str] = &[
-    "district", "sector", "zone", "quarter", "approach", "area", "side", "bank", "region",
-    "part", "suburb", "outskirts", "village", "town", "ward", "wing", "slope", "valley",
-    "hill", "ridge", "shore", "coast", "block", "end", "section", "camp",
+    "district",
+    "sector",
+    "zone",
+    "quarter",
+    "approach",
+    "area",
+    "side",
+    "bank",
+    "region",
+    "part",
+    "suburb",
+    "outskirts",
+    "village",
+    "town",
+    "ward",
+    "wing",
+    "slope",
+    "valley",
+    "hill",
+    "ridge",
+    "shore",
+    "coast",
+    "block",
+    "end",
+    "section",
+    "camp",
 ];
 
 #[rustfmt::skip]
@@ -1146,15 +1284,52 @@ const ROAD_NOUNS: &[&str] = &[
 ];
 
 const ROAD_MODIFIERS: &[&str] = &[
-    "main", "service", "link", "mountain", "national", "state", "ring", "old", "new", "access",
-    "approach", "only", "primary", "secondary", "coastal", "river", "village", "arterial",
-    "emergency", "evacuation", "supply", "road", "rail", "railway", "foot",
+    "main",
+    "service",
+    "link",
+    "mountain",
+    "national",
+    "state",
+    "ring",
+    "old",
+    "new",
+    "access",
+    "approach",
+    "only",
+    "primary",
+    "secondary",
+    "coastal",
+    "river",
+    "village",
+    "arterial",
+    "emergency",
+    "evacuation",
+    "supply",
+    "road",
+    "rail",
+    "railway",
+    "foot",
 ];
 
 const BLOCKING_WORDS: &[&str] = &[
-    "blocked", "blocking", "blockage", "closed", "impassable", "obstructed", "inaccessible",
-    "cut", "washed", "submerged", "flooded", "jammed", "shut", "collapsed", "landslip",
-    "landslide", "debris", "unusable",
+    "blocked",
+    "blocking",
+    "blockage",
+    "closed",
+    "impassable",
+    "obstructed",
+    "inaccessible",
+    "cut",
+    "washed",
+    "submerged",
+    "flooded",
+    "jammed",
+    "shut",
+    "collapsed",
+    "landslip",
+    "landslide",
+    "debris",
+    "unusable",
 ];
 
 const OPEN_WORDS: &[&str] = &["open", "reopened", "cleared", "passable", "clear", "usable"];
@@ -1214,14 +1389,42 @@ const RELATIVE_TIMES: &[&[&str]] = &[
 ];
 
 const ESCALATION: &[&str] = &[
-    "urgent", "urgently", "immediately", "immediate", "asap", "sos", "critical", "critically",
-    "life-threatening", "spreading", "rapidly", "deteriorating", "worsening", "rising",
-    "escalating", "uncontrolled", "massive", "major", "heavy", "intense", "severe",
+    "urgent",
+    "urgently",
+    "immediately",
+    "immediate",
+    "asap",
+    "sos",
+    "critical",
+    "critically",
+    "life-threatening",
+    "spreading",
+    "rapidly",
+    "deteriorating",
+    "worsening",
+    "rising",
+    "escalating",
+    "uncontrolled",
+    "massive",
+    "major",
+    "heavy",
+    "intense",
+    "severe",
 ];
 
 const DEESCALATION: &[&str] = &[
-    "stable", "contained", "controlled", "minor", "resolved", "extinguished", "cleared",
-    "receding", "receded", "restored", "reopened", "safe",
+    "stable",
+    "contained",
+    "controlled",
+    "minor",
+    "resolved",
+    "extinguished",
+    "cleared",
+    "receding",
+    "receded",
+    "restored",
+    "reopened",
+    "safe",
 ];
 
 fn push_unique(list: &mut Vec<String>, item: String) {
@@ -1240,7 +1443,10 @@ fn starts_uppercase(original: &str, token: &Token) -> bool {
 
 /// "nh-48", "sh17", "mdr-12": road identifiers.
 fn is_road_id(word: &str) -> bool {
-    let letters: String = word.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+    let letters: String = word
+        .chars()
+        .take_while(|c| c.is_ascii_alphabetic())
+        .collect();
     let rest = word[letters.len()..].trim_start_matches('-');
     matches!(letters.as_str(), "nh" | "sh" | "mdr" | "odr" | "ah")
         && !rest.is_empty()
@@ -1286,8 +1492,20 @@ fn detect_locations(original: &str, tokens: &[Token]) -> Vec<String> {
         // preposition, from the text as written.
         if matches!(
             word,
-            "near" | "at" | "in" | "behind" | "opposite" | "outside" | "beside" | "towards"
-                | "toward" | "around" | "along" | "past" | "across" | "off"
+            "near"
+                | "at"
+                | "in"
+                | "behind"
+                | "opposite"
+                | "outside"
+                | "beside"
+                | "towards"
+                | "toward"
+                | "around"
+                | "along"
+                | "past"
+                | "across"
+                | "off"
         ) {
             let mut first = index + 1;
             if tokens.get(first).is_some_and(|t| t.text == "the") {
@@ -1312,8 +1530,8 @@ fn detect_locations(original: &str, tokens: &[Token]) -> Vec<String> {
             }
             if let Some(last) = last {
                 let candidate = span(original, tokens, first, last);
-                let head_is_place = LOCATION_HEADS.contains(&tokens[first].text.as_str())
-                    && last > first;
+                let head_is_place =
+                    LOCATION_HEADS.contains(&tokens[first].text.as_str()) && last > first;
                 // A single capitalised pronoun or month is not a place.
                 if !matches!(tokens[first].text.as_str(), "i" | "we" | "they")
                     && (head_is_place || !LOCATION_HEADS.contains(&tokens[first].text.as_str()))
@@ -1347,9 +1565,9 @@ fn detect_routes(original: &str, tokens: &[Token]) -> Vec<RouteMention> {
         let opened = clause_tokens
             .iter()
             .any(|(_, t)| OPEN_WORDS.contains(&t.text.as_str()));
-        let blocked = clause_tokens.iter().any(|(i, t)| {
-            BLOCKING_WORDS.contains(&t.text.as_str()) && !negated_before(tokens, *i)
-        });
+        let blocked = clause_tokens
+            .iter()
+            .any(|(i, t)| BLOCKING_WORDS.contains(&t.text.as_str()) && !negated_before(tokens, *i));
         blocked && !opened
     };
 
@@ -1360,7 +1578,11 @@ fn detect_routes(original: &str, tokens: &[Token]) -> Vec<RouteMention> {
         let clause = token.clause;
 
         if is_road_id(word) {
-            push_route(&mut routes, span(original, tokens, index, index), blocked_in_clause(clause));
+            push_route(
+                &mut routes,
+                span(original, tokens, index, index),
+                blocked_in_clause(clause),
+            );
             index += 1;
             continue;
         }
@@ -1380,8 +1602,10 @@ fn detect_routes(original: &str, tokens: &[Token]) -> Vec<RouteMention> {
                 && (DIRECTIONS.contains(&w)
                     || ROAD_MODIFIERS.contains(&w)
                     || is_road_id(w)
-                    || (starts_uppercase(original, previous) && previous.sentence == token.sentence
-                        && first - 1 > 0 && tokens[first - 2].sentence == token.sentence
+                    || (starts_uppercase(original, previous)
+                        && previous.sentence == token.sentence
+                        && first - 1 > 0
+                        && tokens[first - 2].sentence == token.sentence
                         && !STOPWORDS.contains(&w)));
             if !modifier {
                 break;
@@ -1410,9 +1634,15 @@ fn detect_routes(original: &str, tokens: &[Token]) -> Vec<RouteMention> {
         }
 
         // A bare "access"/"exit" with nothing qualifying it names no route.
-        let bare = first == index && last == index && matches!(word, "access" | "exit" | "entrance" | "path" | "track");
+        let bare = first == index
+            && last == index
+            && matches!(word, "access" | "exit" | "entrance" | "path" | "track");
         if !bare {
-            push_route(&mut routes, span(original, tokens, first, last), blocked_in_clause(clause));
+            push_route(
+                &mut routes,
+                span(original, tokens, first, last),
+                blocked_in_clause(clause),
+            );
         }
         index = last + 1;
     }
@@ -1495,16 +1725,26 @@ fn detect_times(original: &str, tokens: &[Token]) -> Vec<String> {
 
         let clock = word.len() <= 5
             && word.split_once([':', '.']).is_some_and(|(h, m)| {
-                h.len() <= 2 && m.len() == 2 && h.chars().chain(m.chars()).all(|c| c.is_ascii_digit())
+                h.len() <= 2
+                    && m.len() == 2
+                    && h.chars().chain(m.chars()).all(|c| c.is_ascii_digit())
             });
-        let bare_hour = word.len() <= 2 && word.chars().all(|c| c.is_ascii_digit()) && matches!(next, "am" | "pm");
-        let military = word.len() == 4 && word.chars().all(|c| c.is_ascii_digit()) && matches!(next, "hrs" | "hours" | "h");
+        let bare_hour = word.len() <= 2
+            && word.chars().all(|c| c.is_ascii_digit())
+            && matches!(next, "am" | "pm");
+        let military = word.len() == 4
+            && word.chars().all(|c| c.is_ascii_digit())
+            && matches!(next, "hrs" | "hours" | "h");
         let attached = (word.ends_with("am") || word.ends_with("pm"))
             && word.len() <= 7
-            && word[..word.len() - 2].chars().all(|c| c.is_ascii_digit() || c == ':')
+            && word[..word.len() - 2]
+                .chars()
+                .all(|c| c.is_ascii_digit() || c == ':')
             && word.len() > 2;
         let date = word.matches('/').count() >= 1
-            && word.split('/').all(|p| !p.is_empty() && p.len() <= 4 && p.chars().all(|c| c.is_ascii_digit()));
+            && word
+                .split('/')
+                .all(|p| !p.is_empty() && p.len() <= 4 && p.chars().all(|c| c.is_ascii_digit()));
 
         if clock || bare_hour || military {
             let end = if meridiem { index + 1 } else { index };
@@ -1514,8 +1754,10 @@ fn detect_times(original: &str, tokens: &[Token]) -> Vec<String> {
         }
 
         // "30 minutes ago", "an hour ago".
-        if matches!(word, "minutes" | "mins" | "hours" | "hrs" | "hour" | "minute")
-            && next == "ago"
+        if matches!(
+            word,
+            "minutes" | "mins" | "hours" | "hrs" | "hour" | "minute"
+        ) && next == "ago"
             && index > 0
         {
             push_unique(&mut times, span(original, tokens, index - 1, index + 1));
@@ -1610,7 +1852,9 @@ fn assess_severity(
             .any(|(m, _)| m.hazard == hazard && !m.negated && !m.resolved)
     };
     let unquantified = |status: PersonStatus| {
-        people.iter().any(|m| m.status == status && m.count.is_none())
+        people
+            .iter()
+            .any(|m| m.status == status && m.count.is_none())
     };
     let approx = summary.approximate;
 
@@ -1625,7 +1869,10 @@ fn assess_severity(
     }
 
     if let Some(n) = summary.trapped.filter(|n| *n > 0) {
-        add(count_label(n, approx, "may be trapped"), if n >= 5 { 5 } else { 4 });
+        add(
+            count_label(n, approx, "may be trapped"),
+            if n >= 5 { 5 } else { 4 },
+        );
         people_at_stake = true;
     } else if active(Hazard::TrappedPersons) || unquantified(PersonStatus::Trapped) {
         add("people reported trapped".to_string(), 4);
@@ -1641,7 +1888,13 @@ fn assess_severity(
     }
 
     if let Some(n) = summary.injured.filter(|n| *n > 0) {
-        let weight = if n >= 10 { 4 } else if n >= 3 { 3 } else { 2 };
+        let weight = if n >= 10 {
+            4
+        } else if n >= 3 {
+            3
+        } else {
+            2
+        };
         add(count_label(n, approx, "injured"), weight);
         people_at_stake = true;
     } else if unquantified(PersonStatus::Injured) {
@@ -1651,7 +1904,10 @@ fn assess_severity(
         add("medical need reported".to_string(), 1);
     }
 
-    let affected = summary.affected.unwrap_or(0).max(summary.displaced.unwrap_or(0));
+    let affected = summary
+        .affected
+        .unwrap_or(0)
+        .max(summary.displaced.unwrap_or(0));
     if affected >= 100 {
         add(count_label(affected, approx, "affected"), 3);
     } else if affected >= 20 {
@@ -1684,7 +1940,10 @@ fn assess_severity(
 
     if route_blocked {
         if people_at_stake {
-            add("the access route is blocked, which will slow rescue".to_string(), 2);
+            add(
+                "the access route is blocked, which will slow rescue".to_string(),
+                2,
+            );
         } else {
             add("an access route is blocked".to_string(), 1);
         }
@@ -1809,7 +2068,11 @@ pub fn extract(text: &str) -> TextExtraction {
         category,
         category_confidence,
         category_scores: category_scores.into_iter().take(3).collect(),
-        hazards: hazards.into_iter().map(|(m, _)| m).take(MAX_ITEMS).collect(),
+        hazards: hazards
+            .into_iter()
+            .map(|(m, _)| m)
+            .take(MAX_ITEMS)
+            .collect(),
         people,
         people_summary,
         locations: detect_locations(text, &tokens),
@@ -1888,14 +2151,25 @@ mod tests {
         );
 
         assert_eq!(e.category, IncidentCategory::Fire);
-        assert!(e.locations.iter().any(|l| l == "Block B"), "{:?}", e.locations);
+        assert!(
+            e.locations.iter().any(|l| l == "Block B"),
+            "{:?}",
+            e.locations
+        );
         assert_eq!(e.people_summary.at_risk, Some(5));
         assert_eq!(e.people_summary.trapped, Some(5));
         assert!(e.people_summary.approximate);
-        let route = e.routes.iter().find(|r| r.text.to_lowercase() == "eastern road");
+        let route = e
+            .routes
+            .iter()
+            .find(|r| r.text.to_lowercase() == "eastern road");
         assert!(route.is_some_and(|r| r.blocked), "{:?}", e.routes);
         assert_eq!(e.severity.level, Severity::Critical, "{:?}", e.severity);
-        assert!(e.severity.reason.contains("trapped"), "{}", e.severity.reason);
+        assert!(
+            e.severity.reason.contains("trapped"),
+            "{}",
+            e.severity.reason
+        );
     }
 
     // --- Equivalent phrasings ------------------------------------------------
@@ -1966,20 +2240,42 @@ mod tests {
     #[test]
     fn each_requested_incident_type_is_recognised() {
         let cases: &[(&str, Hazard)] = &[
-            ("A child collapsed and is unconscious", Hazard::MedicalEmergency),
-            ("Bus overturned after a collision on the highway", Hazard::Accident),
-            ("Cracks have appeared in the school wall", Hazard::StructuralDamage),
+            (
+                "A child collapsed and is unconscious",
+                Hazard::MedicalEmergency,
+            ),
+            (
+                "Bus overturned after a collision on the highway",
+                Hazard::Accident,
+            ),
+            (
+                "Cracks have appeared in the school wall",
+                Hazard::StructuralDamage,
+            ),
             ("The river has flooded the lower village", Hazard::Flood),
-            ("A landslide came down on the hillside homes", Hazard::Landslide),
+            (
+                "A landslide came down on the hillside homes",
+                Hazard::Landslide,
+            ),
             ("Three miners trapped underground", Hazard::TrappedPersons),
             ("Two hikers missing since yesterday", Hazard::MissingPersons),
             ("Fallen tree blocking the main road", Hazard::RoadBlockage),
             ("Blackout across the eastern district", Hazard::PowerFailure),
-            ("Burst pipe has cut the water supply", Hazard::InfrastructureFailure),
-            ("No signal on any mobile network since noon", Hazard::CommunicationFailure),
+            (
+                "Burst pipe has cut the water supply",
+                Hazard::InfrastructureFailure,
+            ),
+            (
+                "No signal on any mobile network since noon",
+                Hazard::CommunicationFailure,
+            ),
         ];
         for (text, hazard) in cases {
-            assert!(hazards_of(text).contains(hazard), "{text}: {:?}", hazards_of(text));
+            assert!(
+                hazards_of(text).contains(hazard),
+                "{text}: {:?}",
+                hazards_of(text)
+            );
         }
     }
 
@@ -1987,9 +2283,18 @@ mod tests {
     fn categories_stay_inside_the_existing_taxonomy() {
         // The category set is fixed by the stored-analysis schema; new types
         // live in `hazards`, never as new categories.
-        assert_eq!(extract("Landslip has closed the mountain pass").category, IncidentCategory::RoadBlockage);
-        assert_eq!(extract("Floodwater has blocked the road").category, IncidentCategory::Flooding);
-        assert_eq!(extract("Something odd happened").category, IncidentCategory::Other);
+        assert_eq!(
+            extract("Landslip has closed the mountain pass").category,
+            IncidentCategory::RoadBlockage
+        );
+        assert_eq!(
+            extract("Floodwater has blocked the road").category,
+            IncidentCategory::Flooding
+        );
+        assert_eq!(
+            extract("Something odd happened").category,
+            IncidentCategory::Other
+        );
         assert_eq!(
             extract("High winds have brought down the power line").category,
             IncidentCategory::SevereWeather,
@@ -2003,7 +2308,10 @@ mod tests {
     fn negated_hazards_are_recognised_but_not_active() {
         let e = extract("Flooding in Zone A. No casualties reported so far.");
         assert!(!e.has_active(Hazard::MedicalEmergency));
-        assert!(e.hazards.iter().any(|h| h.hazard == Hazard::MedicalEmergency && h.negated));
+        assert!(e
+            .hazards
+            .iter()
+            .any(|h| h.hazard == Hazard::MedicalEmergency && h.negated));
         assert_eq!(e.category, IncidentCategory::Flooding);
     }
 
@@ -2018,7 +2326,10 @@ mod tests {
     fn a_fire_under_control_is_resolved_and_less_severe() {
         let live = extract("Fire spreading through the warehouse");
         let easing = extract("Fire at the warehouse is now under control");
-        assert!(easing.hazards.iter().any(|h| h.hazard == Hazard::Fire && h.resolved));
+        assert!(easing
+            .hazards
+            .iter()
+            .any(|h| h.hazard == Hazard::Fire && h.resolved));
         assert!(easing.severity.score < live.severity.score);
     }
 
@@ -2032,7 +2343,10 @@ mod tests {
     fn fire_brigade_is_an_organisation_not_a_fire() {
         let e = extract("Fire brigade on scene at the flooded underpass");
         assert!(!e.has_active(Hazard::Fire));
-        assert!(e.organizations.iter().any(|o| o.to_lowercase() == "fire brigade"));
+        assert!(e
+            .organizations
+            .iter()
+            .any(|o| o.to_lowercase() == "fire brigade"));
         assert_eq!(e.category, IncidentCategory::Flooding);
     }
 
@@ -2052,25 +2366,58 @@ mod tests {
              NH-48 is closed; two vehicles and one metre of water on the fuel depot road.",
         );
         assert!(e.times.iter().any(|t| t == "10:30 pm"), "{:?}", e.times);
-        assert!(e.organizations.iter().any(|o| o == "NDRF"), "{:?}", e.organizations);
-        assert!(e.locations.iter().any(|l| l == "Sector 7"), "{:?}", e.locations);
-        assert!(e.locations.iter().any(|l| l == "Mount Abu"), "{:?}", e.locations);
-        assert!(e.routes.iter().any(|r| r.text == "NH-48" && r.blocked), "{:?}", e.routes);
-        assert!(e.quantities.iter().any(|q| q.value == 2 && q.unit == "vehicles"), "{:?}", e.quantities);
-        assert!(e.quantities.iter().any(|q| q.value == 1 && q.unit == "metre"));
+        assert!(
+            e.organizations.iter().any(|o| o == "NDRF"),
+            "{:?}",
+            e.organizations
+        );
+        assert!(
+            e.locations.iter().any(|l| l == "Sector 7"),
+            "{:?}",
+            e.locations
+        );
+        assert!(
+            e.locations.iter().any(|l| l == "Mount Abu"),
+            "{:?}",
+            e.locations
+        );
+        assert!(
+            e.routes.iter().any(|r| r.text == "NH-48" && r.blocked),
+            "{:?}",
+            e.routes
+        );
+        assert!(
+            e.quantities
+                .iter()
+                .any(|q| q.value == 2 && q.unit == "vehicles"),
+            "{:?}",
+            e.quantities
+        );
+        assert!(e
+            .quantities
+            .iter()
+            .any(|q| q.value == 1 && q.unit == "metre"));
     }
 
     #[test]
     fn relative_times_are_quoted_not_resolved() {
         let e = extract("Tremor felt last night; aftershock 30 minutes ago.");
         assert!(e.times.iter().any(|t| t == "last night"));
-        assert!(e.times.iter().any(|t| t == "30 minutes ago"), "{:?}", e.times);
+        assert!(
+            e.times.iter().any(|t| t == "30 minutes ago"),
+            "{:?}",
+            e.times
+        );
     }
 
     #[test]
     fn structures_carry_their_modifier() {
         let e = extract("Smoke and flames visible from the fuel depot in Zone B.");
-        assert!(e.structures.iter().any(|s| s == "fuel depot"), "{:?}", e.structures);
+        assert!(
+            e.structures.iter().any(|s| s == "fuel depot"),
+            "{:?}",
+            e.structures
+        );
         assert!(e.locations.iter().any(|l| l == "Zone B"));
     }
 
@@ -2101,7 +2448,10 @@ mod tests {
         let e = extract("Explosion at the chemical plant, 12 injured, road closed");
         assert!(!e.severity.factors.is_empty());
         assert!(e.severity.factors.iter().all(|f| !f.label.is_empty()));
-        assert_eq!(e.severity.score, e.severity.factors.iter().map(|f| f.weight).sum::<i32>());
+        assert_eq!(
+            e.severity.score,
+            e.severity.factors.iter().map(|f| f.weight).sum::<i32>()
+        );
     }
 
     // --- Robustness ----------------------------------------------------------
@@ -2151,7 +2501,10 @@ mod tests {
 
     #[test]
     fn normalise_collapses_and_expands() {
-        assert_eq!(normalise("  Approx   5 PPL\u{2019}s "), "approximately 5 ppl's");
+        assert_eq!(
+            normalise("  Approx   5 PPL\u{2019}s "),
+            "approximately 5 ppl's"
+        );
         assert_eq!(normalise("bldg."), "building.");
     }
 }
