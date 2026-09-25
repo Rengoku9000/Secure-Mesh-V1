@@ -1,10 +1,18 @@
 # SecureMesh-SLM — Fine-Tuning Plan and Status
 
-**Status: pipeline complete, dataset expanded to 1,428 validated examples,
-no fine-tuning run has happened. Nothing in `src-tauri/` has changed.** This
-document exists so that claim can be checked rather than taken on faith, in
-the same spirit as `PROVISIONING.md` and `EVALUATION.md`: every number below
-is either measured or explicitly marked not yet measured.
+**Status: one candidate trained (`securemesh-slm-v2-qlora-r1`), its
+pre-selected epoch-1 checkpoint evaluated once on the frozen test set, and
+exported to GGUF — [results below](#frozen-test-result-phase-5). It is NOT
+deployed: production still runs the stock model, and promotion is gated on
+[`DEPLOYMENT_CHECKLIST.md`](DEPLOYMENT_CHECKLIST.md).** This document exists
+so that claim can be checked rather than taken on faith, in the same spirit as
+`PROVISIONING.md` and `EVALUATION.md`: every number below is either measured
+or explicitly marked not yet measured.
+
+> **Reading order.** This file is a chronological log. Sections written
+> before training — including "Exact next step" at the end, which describes
+> the pre-training environment blockers — are kept as the record of that
+> point in time and are superseded by the Phase 3F–5 sections.
 
 ---
 

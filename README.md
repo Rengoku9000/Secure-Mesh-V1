@@ -199,7 +199,7 @@ The first build compiles the Rust core and takes several minutes.
 
 ```bash
 cd src-tauri
-cargo test            # unit + integration tests
+cargo test            # 929 tests: 699 unit + 230 integration
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
@@ -503,8 +503,9 @@ move incidents over long-range radio.
   QUIC with an optional LoRa side. QUIC answers everything the sync engine
   asks, and a missing, unplugged or failing radio changes nothing about it
 - **The origin's own signature crosses the air.** Each incident or observation
-  event is re-encoded into a compact binary frame (at most 247 bytes, CRC-32
-  checked) that carries its **existing** Ed25519 signature. The receiver
+  event is re-encoded into a compact binary frame (at most 239 bytes, under the
+  E22's 240-byte sub-packet, CRC-32 checked) that carries its **existing**
+  Ed25519 signature. The receiver
   rebuilds the exact event the origin signed and verifies it with the same
   code as a QUIC event. The codec checks its own output and **refuses** an
   event that would not survive exactly; nothing is truncated to fit
@@ -519,8 +520,8 @@ move incidents over long-range radio.
   signed 122-byte `SyncRequest` with its watermark and a 64-bit "already have"
   bitmap. The origin answers with up to 8 of **its own** events, never a third
   party's, so LoRa does not relay
-- **Bounded on purpose.** Requests are domain-separated, signed and checked for
-  freshness and replay. A responder answers each peer at most once every 30 s,
+- **Bounded on purpose.** Requests are domain-separated and signed, and a
+  requester's timestamps must strictly increase, so a replayed frame is refused. A responder answers each peer at most once every 30 s,
   a requester waits 45 s before asking the same origin again, at most one
   request is served per receive tick, and the outbox is capped.
   Nothing polls or retries on a timer: a request is made only after an event

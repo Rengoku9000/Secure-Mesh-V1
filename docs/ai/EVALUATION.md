@@ -336,6 +336,12 @@ cd src-tauri
 cargo run --example nlp_evaluation --release
 ```
 
+> **Stale pending re-run.** The figures below were measured before the rule
+> layer gained negation handling ("no injuries"), resolved-hazard cues ("fire
+> extinguished"), vague counts ("dozens of") and service-word guards ("fire
+> brigade", "medical supplies") in commit `9eeee36`, which also extended the
+> `nlp_evaluation` harness. Re-run the command above before quoting them.
+
 ### Category accuracy
 
 | Set | Rules only | Semantic only | Rules + fallback |
@@ -388,3 +394,20 @@ On CPU, no GPU, on the hardware above:
 Interactive for an operator working one incident at a time. Not interactive for
 bulk analysis — indexing 500 incidents is an explicit, batched, backgroundable
 action for that reason.
+
+---
+
+## Fine-tuned candidate (SecureMesh-SLM)
+
+A QLoRA-fine-tuned version of the same model was evaluated once, on a frozen
+162-record test set, against the stock model on the identical decoding path.
+It is **not deployed**; everything above describes the stock model production
+runs. Headline (stock → candidate): category 47.1% → 78.4%, severity 35.3% →
+58.6%, access status 11.8% → 74.7%, fully correct 0.0% → 33.3%, with cluster
+bootstrap intervals that exclude zero. The stock figures there differ from the
+ones above because the test set, the decoding path and the scoring differ.
+
+The same caveats apply with more force: in-distribution synthetic data, an
+access-status gain that is mostly convention alignment, and CRITICAL still
+under-called as HIGH. Method, full tables and failure analysis:
+[`FINETUNING.md`](FINETUNING.md).

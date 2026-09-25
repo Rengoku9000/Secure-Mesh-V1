@@ -167,6 +167,22 @@ model reports why, and keeps working.
 not a TEE and is not described as one), GPU or NPU acceleration, and any
 automatic model download.
 
+### Phase 3+ — Model hardening and SecureMesh-SLM 🔨 IN PROGRESS
+
+| Item | Status |
+|---|---|
+| Consistency checks: model analysis vs. rule-layer evidence (`ai/consistency.rs`) | ✅ Findings only; never corrects. `ARCHITECTURE.md` §6.10 |
+| Operator review panel showing both readings separately | ✅ `review.ts`, pinned by `node --test` |
+| `confidence` removed from the analysis schema; legacy values shown as *not available* | ✅ |
+| Chat-template control markers neutralised in `fence_report` | ✅ |
+| Rule-layer hardening: negation, resolved hazards, vague counts, service words | ✅ |
+| Python prompt/schema mirror guarded by `tests/prompt_mirror_drift.rs` | ✅ |
+| Training pipeline and 1,428-example synthetic dataset (`training/`) | ✅ |
+| First QLoRA run + frozen test evaluation | ✅ Category 47→78%, severity 35→59%; overfits after epoch 1; CRITICAL under-called. `docs/ai/FINETUNING.md` |
+| New held-out set before claiming any further improvement | 📋 Next — the test set has been used once |
+| Deploy the candidate | ❌ **Not deployed.** Gated on `docs/ai/DEPLOYMENT_CHECKLIST.md` |
+| `access_status` prompt/dataset convention mismatch | ❌ Open — needs an approved prompt change and re-baseline |
+
 ---
 
 ## Phase 4A — Platform feasibility study ✅ COMPLETE
@@ -220,14 +236,33 @@ verification.
 
 ---
 
-## Phase 6 — Physical node 🔍
+## Phase 6 — Physical node 🔍 (LoRa link 🔨 in progress)
 
 **Goal:** a self-contained field device.
 
 Target components: edge AI compute · TPM 2.0 or secure element · local SSD ·
 Wi-Fi · optional LoRa · GNSS · optional camera · battery · enclosure.
 
-**No hardware is to be purchased or committed to yet.** Evaluate first:
+### LoRa link — software implemented, bench-verified module
+
+Built against an Ebyte E22 on a CH340 USB-UART bridge (9600 8N1), with the
+compute board still undecided. Design: `ARCHITECTURE.md` §5.8; security:
+`SECURITY.md` §5.20, §6.21.
+
+| Item | Status |
+|---|---|
+| Serial transport, framed + CRC-32, isolated from QUIC (`CompositeTransport`) | ✅ Absent or failing device changes nothing |
+| Diagnostic frame send/receive (`send_lora_diagnostic`) | ✅ IPC only, no UI |
+| Lossless compact event codec carrying the origin's signature | ✅ ≤ 239-byte frames; oversized events refused |
+| Event ingest under the existing trust rule | ✅ No enrolment, no key, no relay over the air |
+| Opt-in TX of locally created events (`SECUREMESH_LORA_EVENT_TX=1`) | ✅ |
+| Historical sync: gap detection, signed `SyncRequest`, responder | ✅ Own events only, rate limited |
+| UI for LoRa status and settings | ❌ Environment variables only |
+| Payload encryption | ❌ Not implemented — plaintext on air |
+| Duty-cycle enforcement, persistent replay state | ❌ |
+| Field range test between two physical nodes | ❌ Not yet measured |
+
+**No compute hardware is to be purchased or committed to yet.** Evaluate first:
 
 | Criterion | Why it decides the outcome |
 |---|---|
@@ -248,9 +283,8 @@ The software architecture must not depend on any single board. Phase 5's
 
 ## Explicitly not planned
 
-**Blockchain.** The SIH theme is "Blockchain & Cybersecurity", and SecureMesh
-fits it through cybersecurity: cryptographic identity, authenticated peers,
-confidential computing. Adding a distributed ledger would introduce consensus
+**Blockchain.** SecureMesh's problem statement (SIH26223, Hardware · Disaster
+Management) does not call for a distributed ledger. Adding one would introduce consensus
 overhead and, in a partitioned mesh, is the wrong tool for the problem —
 availability under partition is exactly what SecureMesh requires and what
 consensus sacrifices. If a specific architectural problem later genuinely calls

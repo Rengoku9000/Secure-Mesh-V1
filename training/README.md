@@ -1,7 +1,9 @@
 # SecureMesh-SLM — Training Pipeline
 
-**Phase 2 status: dataset expanded to 1,428 validated examples. No
-fine-tuning run has happened. No model has been changed.**
+**Status: dataset of 1,428 validated examples; one QLoRA candidate trained,
+evaluated once on the frozen test set, and exported to GGUF. The production
+model has not been changed — the candidate is not deployed.** Results and
+caveats: [`docs/ai/FINETUNING.md`](../docs/ai/FINETUNING.md).
 
 This directory specializes the **existing** local model
 (Qwen2.5-1.5B-Instruct, already provisioned and evaluated — see
@@ -31,8 +33,8 @@ training/
 │   ├── build_dataset.py     validates, splits by scenario_group, checks leakage
 │   ├── validate_dataset.py  the schema mirror + corpus quality checks
 │   ├── dataset_stats.py     distributions and capability coverage
-│   ├── finetune.py          LoRA/QLoRA training (scaffold; not yet run)
-│   ├── export_gguf.py       merge adapter -> GGUF -> quantize (scaffold; not run)
+│   ├── finetune.py          LoRA/QLoRA training (run once: v2-qlora-r1)
+│   ├── export_gguf.py       merge adapter -> GGUF -> quantize (run once)
 │   └── evaluate.py          offline scoring of a predictions file against gold
 ├── configs/
 │   └── lora_config.yaml     hyperparameters, target modules, data file paths
@@ -70,8 +72,11 @@ actually sends it.
 
 ### Keeping this in sync with prompt.rs and intelligence.rs
 
-There is no automated check that these stay in sync — Python cannot import
-Rust, and adding a code-generation step was judged out of scope for Phase 1.
+The evaluation prompt mirror, `scripts/securemesh_prompt.py`, **is** checked
+automatically: `src-tauri/tests/prompt_mirror_drift.rs` parses it and fails the
+Rust test suite if it diverges from `analysis_schema()` and the system prompt.
+The dataset validator's enums and bounds are not — Python cannot import Rust,
+and adding a code-generation step was judged out of scope.
 **Whenever any of the following changes in `src-tauri/src/ai/prompt.rs` or
 `src-tauri/src/domain/intelligence.rs`, update the corresponding constant in
 `validate_dataset.py` and `finetune.py` by hand:**
